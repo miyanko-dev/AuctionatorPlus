@@ -3,18 +3,17 @@ local ADDON_NAME = ...
 local PRICE_JUMP_RATIO = 1.10
 local MAX_BRACKETS = 5
 local SCAN_TIMEOUT_SECONDS = 6
-local CHAT_PREFIX = "|cff33ff99[Arbitrage]|r "
+local CHAT_PREFIX = "|cffffff00[FlipFinder]|r "
 
-local AF = {}
-AF.collected = {}
-AF.seenKeys = {}
-AF.scanQueue = {}
-AF.arbitrageKeys = {}
-AF.arbitrageInfo = {}
-AF.currentEntry = nil
-AF.currentKey = nil
-AF.currentIsCommodity = nil
-AF.scanning = false
+local FF = {}
+FF.collected = {}
+FF.seenKeys = {}
+FF.scanQueue = {}
+FF.flipKeys = {}
+FF.currentEntry = nil
+FF.currentKey = nil
+FF.currentIsCommodity = nil
+FF.scanning = false
 
 local function KeyString(itemKey)
   return Auctionator.Utilities.ItemKeyString(itemKey)
@@ -49,7 +48,7 @@ local function ExtractBrackets(prices)
   return brackets
 end
 
-local function HasArbitrage(brackets)
+local function HasFlip(brackets)
   if #brackets < 2 then
     return false
   end
@@ -92,15 +91,14 @@ local function CollectItemPrices(itemKey)
   return prices
 end
 
-function AF:ResetState()
+function FF:ResetState()
   self:AbortScan()
   self.collected = {}
   self.seenKeys = {}
-  self.arbitrageKeys = {}
-  self.arbitrageInfo = {}
+  self.flipKeys = {}
 end
 
-function AF:CollectEntries(entries)
+function FF:CollectEntries(entries)
   if type(entries) ~= "table" then
     return
   end
@@ -115,7 +113,7 @@ function AF:CollectEntries(entries)
   end
 end
 
-function AF:AbortScan()
+function FF:AbortScan()
   if self.currentTimeout then
     self.currentTimeout:Cancel()
     self.currentTimeout = nil
@@ -127,7 +125,7 @@ function AF:AbortScan()
   self.scanQueue = {}
 end
 
-function AF:StartScan()
+function FF:StartScan()
   self:AbortScan()
 
   for _, entry in ipairs(self.collected) do
@@ -139,10 +137,11 @@ function AF:StartScan()
   end
 
   self.scanning = true
+  self.dealCount = 0
   self:ScanNext()
 end
 
-function AF:ScanNext()
+function FF:ScanNext()
   if not self.scanning then
     return
   end
@@ -157,6 +156,13 @@ function AF:ScanNext()
     self.currentEntry = nil
     self.currentKey = nil
     self.currentIsCommodity = nil
+
+    if self.dealCount and self.dealCount > 0 then
+      Announce(string.format("Scan complete. Found %d flip deal(s).", self.dealCount))
+    else
+      Announce("Scan complete. No flip deals found.")
+    end
+
     return
   end
 
@@ -181,7 +187,7 @@ function AF:ScanNext()
   end)
 end
 
-function AF:FireQuery()
+function FF:FireQuery()
   if not self.scanning or not self.currentEntry then
     return
   end
@@ -210,7 +216,7 @@ function AF:FireQuery()
   end
 end
 
-function AF:HandleScanResult(itemKeyOrID)
+function FF:HandleScanResult(itemKeyOrID)
   if not self.scanning or not self.currentEntry then
     return
   end
@@ -236,15 +242,9 @@ function AF:HandleScanResult(itemKeyOrID)
   end
 
   local brackets = ExtractBrackets(prices)
-  if HasArbitrage(brackets) then
-    self.arbitrageKeys[self.currentKey] = true
-    self.arbitrageInfo[self.currentKey] = {
-      itemName = self.currentEntry.itemName,
-      itemLink = self.currentEntry.itemLink,
-      minPrice = brackets[1],
-      maxPrice = brackets[#brackets],
-      brackets = #brackets,
-    }
+  if HasFlip(brackets) then
+    self.flipKeys[self.currentKey] = true
+    self.dealCount = (self.dealCount or 0) + 1
 
     local name = self.currentEntry.itemLink or self.currentEntry.itemName or "?"
     local ratio = brackets[#brackets] / brackets[1]
@@ -257,7 +257,7 @@ function AF:HandleScanResult(itemKeyOrID)
   self:ScanNext()
 end
 
-function AF:ReceiveEvent(eventName, eventData, ...)
+function FF:ReceiveEvent(eventName, eventData, ...)
   if eventName == Auctionator.Shopping.Tab.Events.SearchStart then
     self:ResetState()
 
@@ -266,7 +266,6 @@ function AF:ReceiveEvent(eventName, eventData, ...)
 
   elseif eventName == Auctionator.Shopping.Tab.Events.SearchEnd then
     self:CollectEntries(eventData)
-    self:StartScan()
 
   elseif eventName == Auctionator.Buying.Events.ShowCommodityBuy
       or eventName == Auctionator.Buying.Events.ShowItemBuy then
@@ -285,17 +284,17 @@ function AF:ReceiveEvent(eventName, eventData, ...)
 end
 
 local function RegisterEventBus()
-  if AF.registered then
+  if FF.registered then
     return
   end
   if not (Auctionator and Auctionator.EventBus and Auctionator.AH and Auctionator.AH.Events
       and Auctionator.Shopping and Auctionator.Shopping.Tab and Auctionator.Buying) then
     return
   end
-  AF.registered = true
+  FF.registered = true
 
-  Auctionator.EventBus:RegisterSource(AF, "AuctionatorArbitrageFinder")
-  Auctionator.EventBus:Register(AF, {
+  Auctionator.EventBus:RegisterSource(FF, "FlipFinder")
+  Auctionator.EventBus:Register(FF, {
     Auctionator.Shopping.Tab.Events.SearchStart,
     Auctionator.Shopping.Tab.Events.SearchEnd,
     Auctionator.Shopping.Tab.Events.SearchIncrementalUpdate,
@@ -306,43 +305,67 @@ local function RegisterEventBus()
   })
 end
 
-local function RegisterSlashCommand()
-  SLASH_CAF1 = "/caf"
-  SlashCmdList["CAF"] = function(msg)
-    local arg = (msg or ""):lower():match("^%s*(%S*)")
-
-    if arg == "list" then
-      local count = 0
-      for key, info in pairs(AF.arbitrageInfo) do
-        count = count + 1
-        local name = info.itemLink or info.itemName or key
-        local ratio = info.maxPrice / info.minPrice
-        Announce(string.format(
-          "%s  %s -> %s  x%.2f",
-          name, FormatGold(info.minPrice), FormatGold(info.maxPrice), ratio
-        ))
-      end
-      if count == 0 then
-        Announce("No deals found yet.")
-      end
-
-    elseif arg == "rescan" then
-      if #AF.collected == 0 then
-        Announce("No shopping entries cached. Run a shopping list search first.")
-      else
-        Announce(string.format("Rescanning %d item(s)...", #AF.collected))
-        AF:StartScan()
-      end
-
-    else
-      Announce(string.format(
-        "registered=%s, scanning=%s, collected=%d, arbitrage=%d",
-        tostring(AF.registered), tostring(AF.scanning),
-        #AF.collected, (function() local n = 0 for _ in pairs(AF.arbitrageKeys) do n = n + 1 end return n end)()
-      ))
-      Announce("Commands: /caf list, /caf rescan")
-    end
+local function OnScanButtonClick()
+  if FF.scanning then
+    Announce("Scan already in progress.")
+    return
   end
+
+  if #FF.collected == 0 then
+    Announce("Run a shopping list search first.")
+    return
+  end
+
+  FF.flipKeys = {}
+  Announce(string.format("Scanning %d item(s) for flips...", #FF.collected))
+  FF:StartScan()
+end
+
+local function CreateScanButton()
+  if FF.scanButton then
+    return true
+  end
+
+  local anchor = AuctionatorShoppingFrame and AuctionatorShoppingFrame.ExportCSV
+  if not anchor then
+    return false
+  end
+
+  local button = CreateFrame(
+    "Button", "FlipFinderScanButton",
+    AuctionatorShoppingFrame, "UIPanelButtonTemplate"
+  )
+  button:SetSize(150, 22)
+  button:SetText("Scan for Flips")
+  button:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
+  button:SetFrameStrata(anchor:GetFrameStrata())
+  button:SetFrameLevel(anchor:GetFrameLevel() + 1)
+  button:SetScript("OnClick", OnScanButtonClick)
+  button:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText("Scan shopping results for flips")
+    GameTooltip:AddLine(string.format(
+      "Flags items whose first %d price brackets span a %d%%+ spread.",
+      MAX_BRACKETS, math.floor((PRICE_JUMP_RATIO - 1) * 100 + 0.5)
+    ), 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  button:SetScript("OnLeave", GameTooltip_Hide)
+  button:Show()
+
+  FF.scanButton = button
+  return true
+end
+
+local function EnsureScanButton(attempt)
+  attempt = attempt or 1
+  if CreateScanButton() or attempt > 20 then
+    return
+  end
+
+  C_Timer.After(0.5, function()
+    EnsureScanButton(attempt + 1)
+  end)
 end
 
 local bootstrap = CreateFrame("Frame")
@@ -352,12 +375,12 @@ bootstrap:RegisterEvent("AUCTION_HOUSE_CLOSED")
 bootstrap:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
     RegisterEventBus()
-    RegisterSlashCommand()
 
   elseif event == "AUCTION_HOUSE_SHOW" then
     RegisterEventBus()
+    EnsureScanButton()
 
   elseif event == "AUCTION_HOUSE_CLOSED" then
-    AF:AbortScan()
+    FF:AbortScan()
   end
 end)
