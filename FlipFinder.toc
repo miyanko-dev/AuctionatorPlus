@@ -1,6 +1,6 @@
 ## Interface: 120001
 ## Title: FlipFinder
-## Notes: Adds a "Scan for Flips" button to the shopping tab that reports flip deals in chat when the first 5 live price brackets span a 10%+ jump.
+## Notes: Adds a panel to the shopping tab that displays potential flip deals found by scanning live auction listings.
 ## Author: MIYANKO
 ## Version: 1.0.0
 ## Dependencies: Auctionator
