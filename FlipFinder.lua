@@ -4,7 +4,7 @@ local PRICE_JUMP_RATIO = 1.20
 local SCAN_TIMEOUT_SECONDS = 6
 local AH_CUT = 0.05
 
-local PANEL_WIDTH = 760
+local PANEL_WIDTH = 800
 local PANEL_HEIGHT = 500
 local ROW_HEIGHT = 28
 
@@ -17,6 +17,7 @@ FF.listingsCache = {}
 FF.committedRatio = PRICE_JUMP_RATIO
 FF.committedMaxInvest = 0
 FF.committedMinQuantity = 0
+FF.committedMinOrderQty = 0
 
 local function KeyString(itemKey)
   return Auctionator.Utilities.ItemKeyString(itemKey)
@@ -367,6 +368,13 @@ function FF:CommitFilters()
   else
     self.committedMinQuantity = 0
   end
+
+  local orderQty = tonumber(self.panel.MinOrderQtyEditBox:GetText())
+  if orderQty and orderQty > 0 then
+    self.committedMinOrderQty = orderQty
+  else
+    self.committedMinOrderQty = 0
+  end
 end
 
 function FF:ComputeFlipForItem(key)
@@ -384,7 +392,10 @@ function FF:ComputeFlipForItem(key)
   if self.committedMaxInvest > 0 and summary.totalCost > self.committedMaxInvest then
     return
   end
-  if self.committedMinQuantity > 0 and summary.totalQuantity < self.committedMinQuantity then
+  if self.committedMinQuantity > 0 and cached.entry.totalQuantity < self.committedMinQuantity then
+    return
+  end
+  if self.committedMinOrderQty > 0 and summary.totalQuantity < self.committedMinOrderQty then
     return
   end
 
@@ -396,6 +407,7 @@ function FF:ComputeFlipForItem(key)
     margin = summary.margin,
     totalCost = summary.totalCost,
     totalQuantity = summary.totalQuantity,
+    displayQuantity = cached.entry.totalQuantity,
   })
 end
 
@@ -491,6 +503,7 @@ end
 
 local COL_ITEM_W   = 220
 local COL_QTY_W    = 90
+local COL_ORDER_W  = 90
 local COL_COST_W   = 90
 local COL_PROFIT_W = 100
 local COL_BTN_W    = 100
@@ -529,7 +542,13 @@ local function CreateRow(parent, index)
   row.TotalCost:SetWidth(COL_COST_W)
   row.TotalCost:SetJustifyH("LEFT")
 
-  local profitX = costX + COL_COST_W + COL_GAP
+  local orderX = costX + COL_COST_W + COL_GAP
+  row.OrderQty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  row.OrderQty:SetPoint("LEFT", orderX, 0)
+  row.OrderQty:SetWidth(COL_ORDER_W)
+  row.OrderQty:SetJustifyH("LEFT")
+
+  local profitX = orderX + COL_ORDER_W + COL_GAP
   row.Profit = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   row.Profit:SetPoint("LEFT", profitX, 0)
   row.Profit:SetWidth(COL_PROFIT_W)
@@ -644,7 +663,7 @@ local function CreatePanel()
   panel.MinQuantityLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   panel.MinQuantityLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET, FILTER_LABEL_START_Y)
   panel.MinQuantityLabel:SetJustifyH("LEFT")
-  panel.MinQuantityLabel:SetText("Min. Quantity")
+  panel.MinQuantityLabel:SetText("Min. Total Qty")
   panel.MinQuantityLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
   panel.MinQuantityEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
@@ -662,8 +681,29 @@ local function CreatePanel()
     panel.MinQuantityEditBox:ClearFocus()
   end)
 
+  panel.MinOrderQtyLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.MinOrderQtyLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MinOrderQtyLabel:SetJustifyH("LEFT")
+  panel.MinOrderQtyLabel:SetText("Min. Order Qty")
+  panel.MinOrderQtyLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  panel.MinOrderQtyEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
+  panel.MinOrderQtyEditBox:SetSize(70, ROW_H)
+  panel.MinOrderQtyEditBox:SetPoint("TOPLEFT", panel.MinOrderQtyLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.MinOrderQtyEditBox:SetAutoFocus(false)
+  panel.MinOrderQtyEditBox:SetNumeric(true)
+  panel.MinOrderQtyEditBox:SetMaxLetters(6)
+  panel.MinOrderQtyEditBox:SetText("1")
+  panel.MinOrderQtyEditBox:SetScript("OnEnterPressed", function()
+    panel.MinOrderQtyEditBox:ClearFocus()
+    FF:RebuildFlips()
+  end)
+  panel.MinOrderQtyEditBox:SetScript("OnEscapePressed", function()
+    panel.MinOrderQtyEditBox:ClearFocus()
+  end)
+
   panel.MaxInvestLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MaxInvestLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MaxInvestLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
   panel.MaxInvestLabel:SetJustifyH("LEFT")
   panel.MaxInvestLabel:SetText("Max. Invest")
   panel.MaxInvestLabel:SetTextColor(0.7, 0.7, 0.7, 1)
@@ -684,7 +724,7 @@ local function CreatePanel()
   end)
 
   panel.MinMarginLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
   panel.MinMarginLabel:SetJustifyH("LEFT")
   panel.MinMarginLabel:SetText("Min. Price Margin (in %)")
   panel.MinMarginLabel:SetTextColor(0.7, 0.7, 0.7, 1)
@@ -744,8 +784,15 @@ local function CreatePanel()
   panel.HeaderCost:SetText("Invest")
   panel.HeaderCost:SetTextColor(0.7, 0.7, 0.7, 1)
 
+  panel.HeaderOrder = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  panel.HeaderOrder:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_COST_W + COL_GAP, 0)
+  panel.HeaderOrder:SetWidth(COL_ORDER_W)
+  panel.HeaderOrder:SetJustifyH("LEFT")
+  panel.HeaderOrder:SetText("Order Qty")
+  panel.HeaderOrder:SetTextColor(0.7, 0.7, 0.7, 1)
+
   panel.HeaderProfit = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  panel.HeaderProfit:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_COST_W + COL_GAP, 0)
+  panel.HeaderProfit:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_COST_W + COL_GAP + COL_ORDER_W + COL_GAP, 0)
   panel.HeaderProfit:SetWidth(COL_PROFIT_W)
   panel.HeaderProfit:SetJustifyH("LEFT")
   panel.HeaderProfit:SetText("Profit")
@@ -802,7 +849,7 @@ local function CreatePanel()
   -- Section 8: Scroll area
   panel.Scroll = CreateFrame("ScrollFrame", "FlipFinderResultsScroll", panel)
   panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -GAP)
-  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", 0, GAP)
+  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", -(SCROLLBAR_W + 4), GAP)
   panel.Scroll:EnableMouseWheel(true)
   panel.Scroll:SetScript("OnMouseWheel", function(self, delta)
     local scrollBar = panel.ScrollScrollBar
@@ -817,8 +864,8 @@ local function CreatePanel()
   panel.ScrollBackground:SetColorTexture(0.05, 0.05, 0.05, 0.5)
 
   panel.ScrollScrollBar = CreateFrame("Slider", "FlipFinderScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
-  panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -8)
-  panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 8)
+  panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", -4, -8)
+  panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", -4, 8)
   panel.ScrollScrollBar:SetMinMaxValues(0, 0)
   panel.ScrollScrollBar:SetValueStep(1)
   panel.ScrollScrollBar:SetValue(0)
@@ -873,8 +920,9 @@ local function CreatePanel()
       itemText = itemText:gsub("|T[^|]+|t", ""):gsub("|H[^|]+|h", ""):gsub("|h", "")
       itemText = strtrim(itemText)
       row.Item.Text:SetText(itemText)
-      row.Quantity:SetText(string.format("%.0f", flip.totalQuantity))
+      row.Quantity:SetText(string.format("%.0f", flip.displayQuantity))
       row.TotalCost:SetText(FormatGold(flip.totalCost))
+      row.OrderQty:SetText(string.format("%.0f", flip.totalQuantity))
       row.Profit:SetText(FormatGold(flip.margin))
       row:Show()
     end
