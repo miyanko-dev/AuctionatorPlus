@@ -1,0 +1,9 @@
+## Interface: 120005
+## Title: Flipper
+## Notes: Adds a panel to the shopping tab that displays potential flip deals found by scanning live auction listings.
+## Author: MIYANKO
+## Version: 1.0.0
+## Dependencies: Auctionator
+## IconTexture: 133784
+
+Flipper.lua

@@ -331,7 +331,7 @@ local function RegisterEventBus()
   end
   FF.registered = true
 
-  Auctionator.EventBus:RegisterSource(FF, "FlipFinder")
+  Auctionator.EventBus:RegisterSource(FF, "Flipper")
   Auctionator.EventBus:Register(FF, {
     Auctionator.Shopping.Tab.Events.SearchStart,
     Auctionator.Shopping.Tab.Events.SearchEnd,
@@ -463,9 +463,9 @@ function FF:OpenItemDetails(flip)
     return
   end
 
-  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "FlipFinder", { term })
+  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "Flipper", { term })
   if not ok then
-    pcall(Auctionator.API.v1.MultiSearch, "FlipFinder", { term })
+    pcall(Auctionator.API.v1.MultiSearch, "Flipper", { term })
   end
 end
 
@@ -596,7 +596,7 @@ local function CreatePanel()
     return nil
   end
 
-  local panel = CreateFrame("Frame", "FlipFinderResultsPanel", UIParent, "BackdropTemplate")
+  local panel = CreateFrame("Frame", "FlipperResultsPanel", UIParent, "BackdropTemplate")
   panel:SetSize(PANEL_WIDTH, PANEL_HEIGHT)
   panel:SetPoint("CENTER")
   panel:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -847,7 +847,7 @@ local function CreatePanel()
   sepBeforeActions:SetPoint("BOTTOM", panel.ActionsRow, "TOP", 0, GAP)
 
   -- Section 8: Scroll area
-  panel.Scroll = CreateFrame("ScrollFrame", "FlipFinderResultsScroll", panel)
+  panel.Scroll = CreateFrame("ScrollFrame", "FlipperResultsScroll", panel)
   panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -GAP)
   panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", -(SCROLLBAR_W + 4), GAP)
   panel.Scroll:EnableMouseWheel(true)
@@ -863,7 +863,7 @@ local function CreatePanel()
   panel.ScrollBackground:SetAllPoints()
   panel.ScrollBackground:SetColorTexture(0.05, 0.05, 0.05, 0.5)
 
-  panel.ScrollScrollBar = CreateFrame("Slider", "FlipFinderScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
+  panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
   panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", -4, -8)
   panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", -4, 8)
   panel.ScrollScrollBar:SetMinMaxValues(0, 0)
@@ -974,18 +974,18 @@ local function CreateScanButton()
   end
 
   local button = CreateFrame(
-    "Button", "FlipFinderScanButton",
+    "Button", "FlipperScanButton",
     AuctionatorShoppingFrame, "UIPanelButtonTemplate"
   )
   button:SetSize(150, 22)
-  button:SetText("FlipFinder")
+  button:SetText("Flipper")
   button:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
   button:SetFrameStrata(anchor:GetFrameStrata())
   button:SetFrameLevel(anchor:GetFrameLevel() + 1)
   button:SetScript("OnClick", TogglePanel)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle FlipFinder panel")
+    GameTooltip:SetText("Toggle Flipper panel")
     GameTooltip:AddLine("Lists items whose lowest auctions span a price gap above the configured margin.", 1, 1, 1, true)
     GameTooltip:Show()
   end)
