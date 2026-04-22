@@ -4,22 +4,31 @@ A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/aucti
 
 ## How it works
 
-After you run a shopping-list search, the add-on caches the matched entries. When you click **Scan for Flips**, it walks each cached item's live listings and finds price brackets where the cheapest listing is at least 20% lower than the next bracket price. It then displays all found flips in a panel with the following information:
+After you run a shopping-list search, the add-on caches the matched entries. When you click **Scan for Flips**, it walks each cached item's live listings, sorts them ascending by unit price, and flags the first consecutive price gap that meets or exceeds the configured minimum margin. All listings below that gap form the cheap bracket; the next listing's price is the resale target. Results are shown with:
 
 - **Item Name** — the item being flipped
-- **Quantity** — total units available at the flip price
-- **Invest** — total gold required to buy all flip listings
-- **Profit** — estimated profit after auction house cut
+- **Listed Qty** — total units currently listed for that item
+- **Order Qty** — how many units you would buy from the cheap bracket
+- **Invest** — total gold required to buy all cheap-bracket listings
+- **Profit** — estimated profit after the 5% auction house cut
+
+Tweaking filters after a scan re-applies them against the cached listings via **Apply Filter** — no rescan needed.
 
 ## Features
 
 - **Flipper** button added next to the shopping tab's *Export Results* button.
-- Interactive results panel with sortable flip deals.
+- Interactive results panel sorted by ascending invest.
 - Configurable filters:
-  - **Min. Quantity** — minimum total quantity required for a flip to be shown
-  - **Max. Invest** — maximum gold you're willing to invest in a single flip
-  - **Min. Price Margin (in %)** — minimum percentage price jump to flag a deal
-- Search button per row to quickly look up the item.
+  - **Min. Total Qty** — minimum total listed quantity for an item to be considered
+  - **Max. Order Qty** — maximum units the flip can require you to buy
+  - **Max. Qty %** — maximum share (%) of the total listed stock the flip would consume
+  - **Max. Invest** — maximum gold you're willing to spend on a single flip (in gold)
+  - **Min. Profit** — minimum post-cut profit in gold
+  - **Min. Margin** — minimum percentage price gap between consecutive listings
+- **Apply Filter** re-filters cached listings without a rescan; a green "Filter applied" confirmation fades in for 4 seconds.
+- Status row shows `Scanning: X/Y` during a scan and `Ready` when idle.
+- In-table helper text before the first scan, with an adjust-filters suggestion when a scan returns no results.
+- Search button per row to quickly look up the item in Auctionator.
 - Works for both commodity and non-commodity auctions; non-commodity prices are normalised to unit price.
 - Scans pause automatically when you click into an item to buy it.
 - Per-item scan timeout prevents the queue from stalling on unresponsive queries.
@@ -30,22 +39,26 @@ After you run a shopping-list search, the add-on caches the matched entries. Whe
 2. Run a shopping-list search as normal.
 3. Click **Flipper** (to the left of *Export Results*).
 4. Adjust filters as needed and click **Scan for Flips**.
-5. Click **Search** on any row to look up that item in Auctionator.
+5. After the scan, tweak filters and click **Apply Filter** to refine the list without rescanning.
+6. Click **Search** on any row to look up that item in Auctionator.
 
 ## Configuration
 
-Three thresholds are configurable via the panel filters:
-
 | Filter | Description | Default |
 |--------|-------------|---------|
-| Min. Quantity | Minimum total quantity at flip price | 1 |
-| Max. Invest | Maximum gold to invest (in gold, not copper) | 200000 |
-| Min. Price Margin | Minimum % price jump between brackets | 20% |
+| Min. Total Qty | Minimum total listed quantity | 1 |
+| Max. Order Qty | Maximum units bought in a flip | off |
+| Max. Qty % | Maximum % of listed stock the flip consumes | off |
+| Max. Invest | Maximum gold to invest (in gold) | off |
+| Min. Profit | Minimum post-cut profit (in gold) | off |
+| Min. Margin | Minimum % price gap between consecutive listings | 10% |
 
-The internal price jump ratio is defined at the top of `Flipper.lua`:
+Empty / 0 disables a filter, except `Min. Total Qty` (falls back to 1) and `Min. Margin` (falls back to the default).
+
+The default margin is defined at the top of `Flipper.lua`:
 
 ```lua
-local PRICE_JUMP_RATIO = 1.20   -- 20% minimum spread
+local PRICE_JUMP_RATIO = 1.10   -- 10% minimum price gap
 ```
 
 ## Dependencies

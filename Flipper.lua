@@ -1,6 +1,6 @@
 local ADDON_NAME = ...
 
-local PRICE_JUMP_RATIO = 1.20
+local PRICE_JUMP_RATIO = 1.10
 local SCAN_TIMEOUT_SECONDS = 6
 local AH_CUT = 0.05
 
@@ -17,7 +17,9 @@ FF.listingsCache = {}
 FF.committedRatio = PRICE_JUMP_RATIO
 FF.committedMaxInvest = 0
 FF.committedMinQuantity = 0
-FF.committedMinOrderQty = 0
+FF.committedMaxOrderQty = 0
+FF.committedMinProfit = 0
+FF.committedMaxQtyPct = 0
 
 local function KeyString(itemKey)
   return Auctionator.Utilities.ItemKeyString(itemKey)
@@ -151,7 +153,7 @@ function FF:StartScan()
 
   if self.totalToScan == 0 then
     if self.panel then
-      self.panel:SetStatus("Run a shopping list search first.")
+      self.panel:SetStatus("Ready")
       self.panel:Render()
     end
     return
@@ -160,7 +162,7 @@ function FF:StartScan()
   self.scanning = true
 
   if self.panel then
-    self.panel:SetStatus(string.format("Scanning: 0 / %d (0%%)", self.totalToScan))
+    self.panel:SetProgress(0, self.totalToScan)
     self.panel:Render()
   end
 
@@ -183,13 +185,9 @@ function FF:ScanNext()
     self.currentKey = nil
     self.currentIsCommodity = nil
 
+    self.hasScanned = true
     if self.panel then
-      local found = #self.flips
-      if found > 0 then
-        self.panel:SetStatus(string.format("Scan complete. %d flip(s) found.", found))
-      else
-        self.panel:SetStatus("Scan complete. No flips found.")
-      end
+      self.panel:SetStatus("Waiting for input...")
       self.panel:Render()
     end
 
@@ -202,10 +200,7 @@ function FF:ScanNext()
   self.currentIsCommodity = nil
 
   if self.panel then
-    local pct = math.floor((self.scannedCount / self.totalToScan) * 100 + 0.5)
-    self.panel:SetStatus(string.format(
-      "Scanning: %d / %d (%d%%)", self.scannedCount + 1, self.totalToScan, pct
-    ))
+    self.panel:SetProgress(self.scannedCount + 1, self.totalToScan)
   end
 
   local myKey = self.currentKey
@@ -366,14 +361,28 @@ function FF:CommitFilters()
   if qty and qty > 0 then
     self.committedMinQuantity = qty
   else
-    self.committedMinQuantity = 0
+    self.committedMinQuantity = 1
   end
 
-  local orderQty = tonumber(self.panel.MinOrderQtyEditBox:GetText())
+  local orderQty = tonumber(self.panel.MaxOrderQtyEditBox:GetText())
   if orderQty and orderQty > 0 then
-    self.committedMinOrderQty = orderQty
+    self.committedMaxOrderQty = orderQty
   else
-    self.committedMinOrderQty = 0
+    self.committedMaxOrderQty = 0
+  end
+
+  local profitGold = tonumber(self.panel.MinProfitEditBox:GetText())
+  if profitGold and profitGold > 0 then
+    self.committedMinProfit = profitGold * 10000
+  else
+    self.committedMinProfit = 0
+  end
+
+  local qtyPct = tonumber(self.panel.MaxQtyPctEditBox:GetText())
+  if qtyPct and qtyPct > 0 then
+    self.committedMaxQtyPct = qtyPct
+  else
+    self.committedMaxQtyPct = 0
   end
 end
 
@@ -395,8 +404,17 @@ function FF:ComputeFlipForItem(key)
   if self.committedMinQuantity > 0 and cached.entry.totalQuantity < self.committedMinQuantity then
     return
   end
-  if self.committedMinOrderQty > 0 and summary.totalQuantity < self.committedMinOrderQty then
+  if self.committedMaxOrderQty > 0 and summary.totalQuantity > self.committedMaxOrderQty then
     return
+  end
+  if self.committedMinProfit > 0 and summary.margin < self.committedMinProfit then
+    return
+  end
+  if self.committedMaxQtyPct > 0 and cached.entry.totalQuantity > 0 then
+    local pct = (summary.totalQuantity / cached.entry.totalQuantity) * 100
+    if pct > self.committedMaxQtyPct then
+      return
+    end
   end
 
   table.insert(self.flips, {
@@ -421,6 +439,7 @@ function FF:RebuildFlips()
 
   if self.panel then
     self.panel:Render()
+    self.panel:FlashFilterApplied()
   end
 end
 
@@ -478,11 +497,11 @@ local function FormatGold(copper)
   local s = math.floor((copper % 10000) / 100)
 
   if g > 0 and s > 0 then
-    return string.format("%dg %ds", g, s)
+    return string.format("%.0fg %.0fs", g, s)
   elseif g > 0 then
-    return string.format("%dg", g)
+    return string.format("%.0fg", g)
   else
-    return string.format("%ds", s)
+    return string.format("%.0fs", s)
   end
 end
 
@@ -536,19 +555,19 @@ local function CreateRow(parent, index)
   row.Quantity:SetWidth(COL_QTY_W)
   row.Quantity:SetJustifyH("LEFT")
 
-  local costX = qtyX + COL_QTY_W + COL_GAP
-  row.TotalCost = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.TotalCost:SetPoint("LEFT", costX, 0)
-  row.TotalCost:SetWidth(COL_COST_W)
-  row.TotalCost:SetJustifyH("LEFT")
-
-  local orderX = costX + COL_COST_W + COL_GAP
+  local orderX = qtyX + COL_QTY_W + COL_GAP
   row.OrderQty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   row.OrderQty:SetPoint("LEFT", orderX, 0)
   row.OrderQty:SetWidth(COL_ORDER_W)
   row.OrderQty:SetJustifyH("LEFT")
 
-  local profitX = orderX + COL_ORDER_W + COL_GAP
+  local costX = orderX + COL_ORDER_W + COL_GAP
+  row.TotalCost = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  row.TotalCost:SetPoint("LEFT", costX, 0)
+  row.TotalCost:SetWidth(COL_COST_W)
+  row.TotalCost:SetJustifyH("LEFT")
+
+  local profitX = costX + COL_COST_W + COL_GAP
   row.Profit = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   row.Profit:SetPoint("LEFT", profitX, 0)
   row.Profit:SetWidth(COL_PROFIT_W)
@@ -637,7 +656,7 @@ local function CreatePanel()
   panel.Title:SetHeight(ROW_H)
   panel.Title:SetJustifyH("LEFT")
   panel.Title:SetJustifyV("MIDDLE")
-  panel.Title:SetText("Potential Flips")
+  panel.Title:SetText("Search for potential flips")
   panel.Title:SetTextColor(1, 1, 1, 1)
 
   -- Section 2: Separator below title
@@ -655,7 +674,7 @@ local function CreatePanel()
   panel.FilterHeading = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
   panel.FilterHeading:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", 0, 0)
   panel.FilterHeading:SetJustifyH("LEFT")
-  panel.FilterHeading:SetText("Table Filter")
+  panel.FilterHeading:SetText("Filter")
   panel.FilterHeading:SetTextColor(1, 1, 1, 1)
 
   local FILTER_LABEL_START_Y = -HEADING_H - HEADING_GAP
@@ -681,29 +700,29 @@ local function CreatePanel()
     panel.MinQuantityEditBox:ClearFocus()
   end)
 
-  panel.MinOrderQtyLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinOrderQtyLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MinOrderQtyLabel:SetJustifyH("LEFT")
-  panel.MinOrderQtyLabel:SetText("Min. Order Qty")
-  panel.MinOrderQtyLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+  panel.MaxOrderQtyLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.MaxOrderQtyLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MaxOrderQtyLabel:SetJustifyH("LEFT")
+  panel.MaxOrderQtyLabel:SetText("Max. Order Qty")
+  panel.MaxOrderQtyLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  panel.MinOrderQtyEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MinOrderQtyEditBox:SetSize(70, ROW_H)
-  panel.MinOrderQtyEditBox:SetPoint("TOPLEFT", panel.MinOrderQtyLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MinOrderQtyEditBox:SetAutoFocus(false)
-  panel.MinOrderQtyEditBox:SetNumeric(true)
-  panel.MinOrderQtyEditBox:SetMaxLetters(6)
-  panel.MinOrderQtyEditBox:SetText("1")
-  panel.MinOrderQtyEditBox:SetScript("OnEnterPressed", function()
-    panel.MinOrderQtyEditBox:ClearFocus()
+  panel.MaxOrderQtyEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
+  panel.MaxOrderQtyEditBox:SetSize(70, ROW_H)
+  panel.MaxOrderQtyEditBox:SetPoint("TOPLEFT", panel.MaxOrderQtyLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.MaxOrderQtyEditBox:SetAutoFocus(false)
+  panel.MaxOrderQtyEditBox:SetNumeric(true)
+  panel.MaxOrderQtyEditBox:SetMaxLetters(6)
+  panel.MaxOrderQtyEditBox:SetText("")
+  panel.MaxOrderQtyEditBox:SetScript("OnEnterPressed", function()
+    panel.MaxOrderQtyEditBox:ClearFocus()
     FF:RebuildFlips()
   end)
-  panel.MinOrderQtyEditBox:SetScript("OnEscapePressed", function()
-    panel.MinOrderQtyEditBox:ClearFocus()
+  panel.MaxOrderQtyEditBox:SetScript("OnEscapePressed", function()
+    panel.MaxOrderQtyEditBox:ClearFocus()
   end)
 
   panel.MaxInvestLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MaxInvestLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MaxInvestLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
   panel.MaxInvestLabel:SetJustifyH("LEFT")
   panel.MaxInvestLabel:SetText("Max. Invest")
   panel.MaxInvestLabel:SetTextColor(0.7, 0.7, 0.7, 1)
@@ -714,7 +733,7 @@ local function CreatePanel()
   panel.MaxInvestEditBox:SetAutoFocus(false)
   panel.MaxInvestEditBox:SetNumeric(true)
   panel.MaxInvestEditBox:SetMaxLetters(10)
-  panel.MaxInvestEditBox:SetText("200000")
+  panel.MaxInvestEditBox:SetText("")
   panel.MaxInvestEditBox:SetScript("OnEnterPressed", function()
     panel.MaxInvestEditBox:ClearFocus()
     FF:RebuildFlips()
@@ -723,10 +742,31 @@ local function CreatePanel()
     panel.MaxInvestEditBox:ClearFocus()
   end)
 
+  panel.MinProfitLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.MinProfitLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MinProfitLabel:SetJustifyH("LEFT")
+  panel.MinProfitLabel:SetText("Min. Profit")
+  panel.MinProfitLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  panel.MinProfitEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
+  panel.MinProfitEditBox:SetSize(100, ROW_H)
+  panel.MinProfitEditBox:SetPoint("TOPLEFT", panel.MinProfitLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.MinProfitEditBox:SetAutoFocus(false)
+  panel.MinProfitEditBox:SetNumeric(true)
+  panel.MinProfitEditBox:SetMaxLetters(10)
+  panel.MinProfitEditBox:SetText("")
+  panel.MinProfitEditBox:SetScript("OnEnterPressed", function()
+    panel.MinProfitEditBox:ClearFocus()
+    FF:RebuildFlips()
+  end)
+  panel.MinProfitEditBox:SetScript("OnEscapePressed", function()
+    panel.MinProfitEditBox:ClearFocus()
+  end)
+
   panel.MinMarginLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
   panel.MinMarginLabel:SetJustifyH("LEFT")
-  panel.MinMarginLabel:SetText("Min. Price Margin (in %)")
+  panel.MinMarginLabel:SetText("Min. Margin")
   panel.MinMarginLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
   panel.MinMarginEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
@@ -744,10 +784,31 @@ local function CreatePanel()
     panel.MinMarginEditBox:ClearFocus()
   end)
 
+  panel.MaxQtyPctLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.MaxQtyPctLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
+  panel.MaxQtyPctLabel:SetJustifyH("LEFT")
+  panel.MaxQtyPctLabel:SetText("Max. Qty %")
+  panel.MaxQtyPctLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  panel.MaxQtyPctEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
+  panel.MaxQtyPctEditBox:SetSize(70, ROW_H)
+  panel.MaxQtyPctEditBox:SetPoint("TOPLEFT", panel.MaxQtyPctLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.MaxQtyPctEditBox:SetAutoFocus(false)
+  panel.MaxQtyPctEditBox:SetNumeric(true)
+  panel.MaxQtyPctEditBox:SetMaxLetters(3)
+  panel.MaxQtyPctEditBox:SetText("")
+  panel.MaxQtyPctEditBox:SetScript("OnEnterPressed", function()
+    panel.MaxQtyPctEditBox:ClearFocus()
+    FF:RebuildFlips()
+  end)
+  panel.MaxQtyPctEditBox:SetScript("OnEscapePressed", function()
+    panel.MaxQtyPctEditBox:ClearFocus()
+  end)
+
   panel.SaveFilterBtn = CreateFrame("Button", nil, panel.FilterRow, "UIPanelButtonTemplate")
-  panel.SaveFilterBtn:SetSize(80, ROW_H)
-  panel.SaveFilterBtn:SetPoint("BOTTOMRIGHT", panel.FilterRow, "BOTTOMRIGHT", 0, 0)
-  panel.SaveFilterBtn:SetText("Save")
+  panel.SaveFilterBtn:SetSize(100, ROW_H)
+  panel.SaveFilterBtn:SetPoint("TOPRIGHT", panel.FilterRow, "TOPRIGHT", 0, 0)
+  panel.SaveFilterBtn:SetText("Apply Filter")
   panel.SaveFilterBtn:GetFontString():SetTextColor(1, 0.82, 0)
   panel.SaveFilterBtn:SetScript("OnClick", function() FF:RebuildFlips() end)
 
@@ -774,50 +835,95 @@ local function CreatePanel()
   panel.HeaderQty:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP, 0)
   panel.HeaderQty:SetWidth(COL_QTY_W)
   panel.HeaderQty:SetJustifyH("LEFT")
-  panel.HeaderQty:SetText("Quantity")
+  panel.HeaderQty:SetText("Listed Qty")
   panel.HeaderQty:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  panel.HeaderCost = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  panel.HeaderCost:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP, 0)
-  panel.HeaderCost:SetWidth(COL_COST_W)
-  panel.HeaderCost:SetJustifyH("LEFT")
-  panel.HeaderCost:SetText("Invest")
-  panel.HeaderCost:SetTextColor(0.7, 0.7, 0.7, 1)
-
   panel.HeaderOrder = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  panel.HeaderOrder:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_COST_W + COL_GAP, 0)
+  panel.HeaderOrder:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP, 0)
   panel.HeaderOrder:SetWidth(COL_ORDER_W)
   panel.HeaderOrder:SetJustifyH("LEFT")
   panel.HeaderOrder:SetText("Order Qty")
   panel.HeaderOrder:SetTextColor(0.7, 0.7, 0.7, 1)
 
+  panel.HeaderCost = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  panel.HeaderCost:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_ORDER_W + COL_GAP, 0)
+  panel.HeaderCost:SetWidth(COL_COST_W)
+  panel.HeaderCost:SetJustifyH("LEFT")
+  panel.HeaderCost:SetText("Invest")
+  panel.HeaderCost:SetTextColor(0.7, 0.7, 0.7, 1)
+
   panel.HeaderProfit = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-  panel.HeaderProfit:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_COST_W + COL_GAP + COL_ORDER_W + COL_GAP, 0)
+  panel.HeaderProfit:SetPoint("LEFT", panel.HeaderRow, "LEFT", COL_ITEM_W + COL_GAP + COL_QTY_W + COL_GAP + COL_ORDER_W + COL_GAP + COL_COST_W + COL_GAP, 0)
   panel.HeaderProfit:SetWidth(COL_PROFIT_W)
   panel.HeaderProfit:SetJustifyH("LEFT")
   panel.HeaderProfit:SetText("Profit")
   panel.HeaderProfit:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  -- Section 5.2: Status message (right-aligned, 14pt) - defined first
-  panel.StatusText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  -- Section 5.2: Status row (left: state/progress, right: percentage)
+  panel.StatusLeft = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
   do
-    local fontFile, _, fontFlags = panel.StatusText:GetFont()
-    panel.StatusText:SetFont(fontFile, 14, fontFlags)
+    local fontFile, _, fontFlags = panel.StatusLeft:GetFont()
+    panel.StatusLeft:SetFont(fontFile, 14, fontFlags)
   end
-  panel.StatusText:SetPoint("LEFT", panel, "LEFT", PAD + 4, 0)
-  panel.StatusText:SetPoint("RIGHT", panel, "RIGHT", -(PAD + 4), 0)
-  panel.StatusText:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
-  panel.StatusText:SetHeight(ROW_H)
-  panel.StatusText:SetJustifyH("LEFT")
-  panel.StatusText:SetJustifyV("MIDDLE")
-  panel.StatusText:SetText("Run a Shopping List search in Auctionator, then click Scan for Flips to scan for potential flips.")
-  panel.StatusText:SetTextColor(1, 1, 1, 1)
+  panel.StatusLeft:SetPoint("LEFT", panel, "LEFT", PAD + 4, 0)
+  panel.StatusLeft:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
+  panel.StatusLeft:SetHeight(ROW_H)
+  panel.StatusLeft:SetJustifyH("LEFT")
+  panel.StatusLeft:SetJustifyV("MIDDLE")
+  panel.StatusLeft:SetText("Ready")
+  panel.StatusLeft:SetTextColor(1, 1, 1, 1)
+
+  panel.StatusRight = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  do
+    local fontFile, _, fontFlags = panel.StatusRight:GetFont()
+    panel.StatusRight:SetFont(fontFile, 14, fontFlags)
+  end
+  panel.StatusRight:SetPoint("RIGHT", panel, "RIGHT", -(PAD + 4), 0)
+  panel.StatusRight:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
+  panel.StatusRight:SetHeight(ROW_H)
+  panel.StatusRight:SetJustifyH("RIGHT")
+  panel.StatusRight:SetJustifyV("MIDDLE")
+  panel.StatusRight:SetText("")
+  panel.StatusRight:SetTextColor(1, 1, 1, 1)
+
+  panel.FilterAppliedText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  do
+    local fontFile, _, fontFlags = panel.FilterAppliedText:GetFont()
+    panel.FilterAppliedText:SetFont(fontFile, 14, fontFlags)
+  end
+  panel.FilterAppliedText:SetPoint("RIGHT", panel, "RIGHT", -(PAD + 4), 0)
+  panel.FilterAppliedText:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
+  panel.FilterAppliedText:SetHeight(ROW_H)
+  panel.FilterAppliedText:SetJustifyH("RIGHT")
+  panel.FilterAppliedText:SetJustifyV("MIDDLE")
+  panel.FilterAppliedText:SetText("Filter applied")
+  panel.FilterAppliedText:SetTextColor(0.251, 1, 0.251, 1)
+  panel.FilterAppliedText:SetAlpha(0)
+
+  panel.FilterAppliedFader = CreateFrame("Frame", nil, panel)
+  panel.FilterAppliedFader:Hide()
+  panel.FilterAppliedFader:SetScript("OnUpdate", function(self, delta)
+    self.elapsed = (self.elapsed or 0) + delta
+    local t = self.elapsed
+    local alpha
+    if t < 0.2 then
+      alpha = t / 0.2
+    elseif t < 3.8 then
+      alpha = 1
+    elseif t < 4.0 then
+      alpha = 1 - (t - 3.8) / 0.2
+    else
+      alpha = 0
+      self:Hide()
+    end
+    panel.FilterAppliedText:SetAlpha(alpha)
+  end)
 
   -- Section 5.3: Separator above status
   local sepStatus = NewSeparator()
   sepStatus:SetPoint("LEFT", panel, "LEFT", PAD, 0)
   sepStatus:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
-  sepStatus:SetPoint("BOTTOM", panel.StatusText, "TOP", 0, GAP)
+  sepStatus:SetPoint("BOTTOM", panel.StatusLeft, "TOP", 0, GAP)
 
   -- Section 6: Actions row (Cancel + Scan for Flips)
   panel.ActionsRow = CreateFrame("Frame", nil, panel)
@@ -859,11 +965,7 @@ local function CreatePanel()
     scrollBar:SetValue(math.max(minVal, math.min(maxVal, newValue)))
   end)
 
-  panel.ScrollBackground = panel.Scroll:CreateTexture(nil, "BACKGROUND")
-  panel.ScrollBackground:SetAllPoints()
-  panel.ScrollBackground:SetColorTexture(0.05, 0.05, 0.05, 0.5)
-
-  panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
+panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
   panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", -4, -8)
   panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", -4, 8)
   panel.ScrollScrollBar:SetMinMaxValues(0, 0)
@@ -879,8 +981,12 @@ local function CreatePanel()
   panel.Scroll:SetScrollChild(panel.Content)
 
   panel.EmptyMessage = panel.Scroll:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  panel.EmptyMessage:SetPoint("LEFT", panel.Scroll, "LEFT", PAD, 0)
+  panel.EmptyMessage:SetPoint("RIGHT", panel.Scroll, "RIGHT", -PAD, 0)
   panel.EmptyMessage:SetPoint("CENTER", panel.Scroll, "CENTER", 0, 0)
-  panel.EmptyMessage:SetText("No potential flips found.")
+  panel.EmptyMessage:SetJustifyH("CENTER")
+  panel.EmptyMessage:SetWordWrap(true)
+  panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then click Scan for Flips.")
   panel.EmptyMessage:SetTextColor(0.5, 0.5, 0.5, 1)
 
   -- Close button
@@ -893,7 +999,18 @@ local function CreatePanel()
   panel.rows = {}
 
   function panel:SetStatus(text)
-    self.StatusText:SetText(text or "")
+    self.StatusLeft:SetText(text or "Ready")
+    self.StatusRight:SetText("")
+  end
+
+  function panel:SetProgress(scanned, total)
+    self.StatusLeft:SetText(string.format("Scanning: %d/%d", scanned, total))
+    self.StatusRight:SetText("")
+  end
+
+  function panel:FlashFilterApplied()
+    self.FilterAppliedFader.elapsed = 0
+    self.FilterAppliedFader:Show()
   end
 
   function panel:Render()
@@ -902,6 +1019,11 @@ local function CreatePanel()
     table.sort(flips, function(a, b) return a.totalCost < b.totalCost end)
 
     if #flips == 0 then
+      if FF.hasScanned then
+        self.EmptyMessage:SetText("No flips found. Try adjusting your filters or broadening your shopping list search.")
+      else
+        self.EmptyMessage:SetText("Run a shopping list search in Auctionator, then click Scan for Flips.")
+      end
       self.EmptyMessage:Show()
     else
       self.EmptyMessage:Hide()

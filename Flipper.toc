@@ -4,6 +4,6 @@
 ## Author: MIYANKO
 ## Version: 1.0.0
 ## Dependencies: Auctionator
-## IconTexture: 133784
+## IconTexture: 132112
 
 Flipper.lua
