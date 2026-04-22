@@ -1,4 +1,4 @@
-## Interface: 120001
+## Interface: 120005
 ## Title: FlipFinder
 ## Notes: Adds a panel to the shopping tab that displays potential flip deals found by scanning live auction listings.
 ## Author: MIYANKO
