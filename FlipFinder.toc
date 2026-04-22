@@ -1,6 +1,6 @@
 ## Interface: 120005
 ## Title: FlipFinder
-## Notes: Adds a panel to the shopping tab that displays potential flip deals found by scanning live auction listings.
+## Notes: Auctionator companion for finding arbitrage deals in World of Warcraft.
 ## Author: MIYANKO
 ## Version: 1.0.0
 ## Dependencies: Auctionator
