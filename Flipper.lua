@@ -130,11 +130,20 @@ function FF:AbortScan()
     self.currentTimeout:Cancel()
     self.currentTimeout = nil
   end
+  local wasScanning = self.scanning
   self.scanning = false
   self.currentEntry = nil
   self.currentKey = nil
   self.currentIsCommodity = nil
   self.scanQueue = {}
+  if self.panel then
+    self.panel:SetScanningUI(false)
+    if wasScanning then
+      self.panel:SetStatus("Scan cancelled")
+    else
+      self.panel:ClearStatus()
+    end
+  end
 end
 
 function FF:StartScan()
@@ -153,7 +162,8 @@ function FF:StartScan()
 
   if self.totalToScan == 0 then
     if self.panel then
-      self.panel:SetStatus("Ready")
+      self.panel:SetScanningUI(false)
+      self.panel:ClearStatus()
       self.panel:Render()
     end
     return
@@ -162,7 +172,8 @@ function FF:StartScan()
   self.scanning = true
 
   if self.panel then
-    self.panel:SetProgress(0, self.totalToScan)
+    self.panel:SetScanningUI(true)
+    self.panel:StartProgress(self.totalToScan)
     self.panel:Render()
   end
 
@@ -187,7 +198,8 @@ function FF:ScanNext()
 
     self.hasScanned = true
     if self.panel then
-      self.panel:SetStatus("Waiting for input...")
+      self.panel:SetScanningUI(false)
+      self.panel:CompleteProgress(self.totalToScan, self.totalToScan)
       self.panel:Render()
     end
 
@@ -200,7 +212,7 @@ function FF:ScanNext()
   self.currentIsCommodity = nil
 
   if self.panel then
-    self.panel:SetProgress(self.scannedCount + 1, self.totalToScan)
+    self.panel:UpdateProgress(self.scannedCount + 1, self.totalToScan)
   end
 
   local myKey = self.currentKey
@@ -766,7 +778,7 @@ local function CreatePanel()
   panel.MinMarginLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
   panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
   panel.MinMarginLabel:SetJustifyH("LEFT")
-  panel.MinMarginLabel:SetText("Min. Margin")
+  panel.MinMarginLabel:SetText("Min. Margin %")
   panel.MinMarginLabel:SetTextColor(0.7, 0.7, 0.7, 1)
 
   panel.MinMarginEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
@@ -859,85 +871,44 @@ local function CreatePanel()
   panel.HeaderProfit:SetText("Profit")
   panel.HeaderProfit:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  -- Section 5.2: Status row (left: state/progress, right: percentage)
-  panel.StatusLeft = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  do
-    local fontFile, _, fontFlags = panel.StatusLeft:GetFont()
-    panel.StatusLeft:SetFont(fontFile, 14, fontFlags)
-  end
-  panel.StatusLeft:SetPoint("LEFT", panel, "LEFT", PAD + 4, 0)
-  panel.StatusLeft:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
-  panel.StatusLeft:SetHeight(ROW_H)
-  panel.StatusLeft:SetJustifyH("LEFT")
-  panel.StatusLeft:SetJustifyV("MIDDLE")
-  panel.StatusLeft:SetText("Ready")
-  panel.StatusLeft:SetTextColor(1, 1, 1, 1)
-
-  panel.StatusRight = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  do
-    local fontFile, _, fontFlags = panel.StatusRight:GetFont()
-    panel.StatusRight:SetFont(fontFile, 14, fontFlags)
-  end
-  panel.StatusRight:SetPoint("RIGHT", panel, "RIGHT", -(PAD + 4), 0)
-  panel.StatusRight:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
-  panel.StatusRight:SetHeight(ROW_H)
-  panel.StatusRight:SetJustifyH("RIGHT")
-  panel.StatusRight:SetJustifyV("MIDDLE")
-  panel.StatusRight:SetText("")
-  panel.StatusRight:SetTextColor(1, 1, 1, 1)
-
-  panel.FilterAppliedText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  do
-    local fontFile, _, fontFlags = panel.FilterAppliedText:GetFont()
-    panel.FilterAppliedText:SetFont(fontFile, 14, fontFlags)
-  end
-  panel.FilterAppliedText:SetPoint("RIGHT", panel, "RIGHT", -(PAD + 4), 0)
-  panel.FilterAppliedText:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD + 4)
-  panel.FilterAppliedText:SetHeight(ROW_H)
-  panel.FilterAppliedText:SetJustifyH("RIGHT")
-  panel.FilterAppliedText:SetJustifyV("MIDDLE")
+  panel.FilterAppliedText = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.FilterAppliedText:SetPoint("TOP", panel.SaveFilterBtn, "BOTTOM", 0, -4)
+  panel.FilterAppliedText:SetWidth(140)
+  panel.FilterAppliedText:SetJustifyH("CENTER")
   panel.FilterAppliedText:SetText("Filter applied")
   panel.FilterAppliedText:SetTextColor(0.251, 1, 0.251, 1)
   panel.FilterAppliedText:SetAlpha(0)
 
-  panel.FilterAppliedFader = CreateFrame("Frame", nil, panel)
-  panel.FilterAppliedFader:Hide()
-  panel.FilterAppliedFader:SetScript("OnUpdate", function(self, delta)
-    self.elapsed = (self.elapsed or 0) + delta
-    local t = self.elapsed
-    local alpha
-    if t < 0.2 then
-      alpha = t / 0.2
-    elseif t < 3.8 then
-      alpha = 1
-    elseif t < 4.0 then
-      alpha = 1 - (t - 3.8) / 0.2
-    else
-      alpha = 0
-      self:Hide()
-    end
-    panel.FilterAppliedText:SetAlpha(alpha)
-  end)
+  local function MakeFader(target)
+    local fader = CreateFrame("Frame", nil, panel)
+    fader:Hide()
+    fader:SetScript("OnUpdate", function(self, delta)
+      self.elapsed = (self.elapsed or 0) + delta
+      local t = self.elapsed
+      local alpha
+      if t < 0.2 then
+        alpha = t / 0.2
+      elseif t < 3.8 then
+        alpha = 1
+      elseif t < 4.0 then
+        alpha = 1 - (t - 3.8) / 0.2
+      else
+        alpha = 0
+        self:Hide()
+      end
+      target:SetAlpha(alpha)
+    end)
+    return fader
+  end
 
-  -- Section 5.3: Separator above status
-  local sepStatus = NewSeparator()
-  sepStatus:SetPoint("LEFT", panel, "LEFT", PAD, 0)
-  sepStatus:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
-  sepStatus:SetPoint("BOTTOM", panel.StatusLeft, "TOP", 0, GAP)
+  panel.FilterAppliedFader = MakeFader(panel.FilterAppliedText)
 
-  -- Section 6: Actions row (Cancel + Scan for Flips)
+  -- Section 6: Actions row (status left, Cancel + Scan for Flips right)
   panel.ActionsRow = CreateFrame("Frame", nil, panel)
   panel.ActionsRow:SetHeight(ROW_H)
   panel.ActionsRow:SetPoint("LEFT", panel, "LEFT", PAD, 0)
   panel.ActionsRow:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
-  panel.ActionsRow:SetPoint("BOTTOM", sepStatus, "TOP", 0, GAP)
-
-  panel.CancelBtn = CreateFrame("Button", nil, panel.ActionsRow, "UIPanelButtonTemplate")
-  panel.CancelBtn:SetSize(80, ROW_H)
-  panel.CancelBtn:SetPoint("LEFT", panel.ActionsRow, "LEFT", 0, 0)
-  panel.CancelBtn:SetText("Cancel")
-  panel.CancelBtn:GetFontString():SetTextColor(1, 0.82, 0)
-  panel.CancelBtn:SetScript("OnClick", function() panel:Hide() end)
+  panel.ActionsRow:SetPoint("BOTTOM", panel, "BOTTOM", 0, PAD)
 
   panel.FlipScanBtn = CreateFrame("Button", nil, panel.ActionsRow, "UIPanelButtonTemplate")
   panel.FlipScanBtn:SetSize(120, ROW_H)
@@ -945,6 +916,57 @@ local function CreatePanel()
   panel.FlipScanBtn:SetText("Scan for Flips")
   panel.FlipScanBtn:GetFontString():SetTextColor(1, 0.82, 0)
   panel.FlipScanBtn:SetScript("OnClick", function() FF:StartScan() end)
+
+  panel.CancelBtn = CreateFrame("Button", nil, panel.ActionsRow, "UIPanelButtonTemplate")
+  panel.CancelBtn:SetSize(80, ROW_H)
+  panel.CancelBtn:SetPoint("RIGHT", panel.FlipScanBtn, "LEFT", -8, 0)
+  panel.CancelBtn:SetText("Cancel")
+  panel.CancelBtn:GetFontString():SetTextColor(1, 0.82, 0)
+  panel.CancelBtn:SetScript("OnClick", function() FF:AbortScan() end)
+  panel.CancelBtn:Hide()
+
+  panel.StatusLeft = panel.ActionsRow:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  do
+    local fontFile, _, fontFlags = panel.StatusLeft:GetFont()
+    panel.StatusLeft:SetFont(fontFile, 14, fontFlags)
+  end
+  panel.StatusLeft:SetPoint("LEFT", panel.ActionsRow, "LEFT", 4, 0)
+  panel.StatusLeft:SetPoint("RIGHT", panel.CancelBtn, "LEFT", -8, 0)
+  panel.StatusLeft:SetHeight(ROW_H)
+  panel.StatusLeft:SetJustifyH("LEFT")
+  panel.StatusLeft:SetJustifyV("MIDDLE")
+  panel.StatusLeft:SetText("")
+  panel.StatusLeft:SetTextColor(1, 1, 1, 1)
+  panel.StatusLeft:SetAlpha(0)
+
+  panel.StatusFader = MakeFader(panel.StatusLeft)
+
+  panel.ProgressFadeIn = CreateFrame("Frame", nil, panel)
+  panel.ProgressFadeIn:Hide()
+  panel.ProgressFadeIn:SetScript("OnUpdate", function(self, delta)
+    self.elapsed = (self.elapsed or 0) + delta
+    if self.elapsed < 0.2 then
+      panel.StatusLeft:SetAlpha(self.elapsed / 0.2)
+    else
+      panel.StatusLeft:SetAlpha(1)
+      self:Hide()
+    end
+  end)
+
+  panel.ProgressFadeOut = CreateFrame("Frame", nil, panel)
+  panel.ProgressFadeOut:Hide()
+  panel.ProgressFadeOut:SetScript("OnUpdate", function(self, delta)
+    self.elapsed = (self.elapsed or 0) + delta
+    local t = self.elapsed
+    if t < 4.0 then
+      panel.StatusLeft:SetAlpha(1)
+    elseif t < 4.2 then
+      panel.StatusLeft:SetAlpha(1 - (t - 4.0) / 0.2)
+    else
+      panel.StatusLeft:SetAlpha(0)
+      self:Hide()
+    end
+  end)
 
   -- Section 7: Separator below table, above actions
   local sepBeforeActions = NewSeparator()
@@ -955,7 +977,7 @@ local function CreatePanel()
   -- Section 8: Scroll area
   panel.Scroll = CreateFrame("ScrollFrame", "FlipperResultsScroll", panel)
   panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -GAP)
-  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", -(SCROLLBAR_W + 4), GAP)
+  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", 0, GAP)
   panel.Scroll:EnableMouseWheel(true)
   panel.Scroll:SetScript("OnMouseWheel", function(self, delta)
     local scrollBar = panel.ScrollScrollBar
@@ -966,8 +988,8 @@ local function CreatePanel()
   end)
 
 panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
-  panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", -4, -8)
-  panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", -4, 8)
+  panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", 0, -8)
+  panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", 0, 8)
   panel.ScrollScrollBar:SetMinMaxValues(0, 0)
   panel.ScrollScrollBar:SetValueStep(1)
   panel.ScrollScrollBar:SetValue(0)
@@ -998,14 +1020,56 @@ panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, 
 
   panel.rows = {}
 
-  function panel:SetStatus(text)
-    self.StatusLeft:SetText(text or "Ready")
-    self.StatusRight:SetText("")
+  function panel:SetScanningUI(active)
+    if active then
+      self.CancelBtn:Show()
+    else
+      self.CancelBtn:Hide()
+    end
   end
 
-  function panel:SetProgress(scanned, total)
+  function panel:ClearStatus()
+    self.StatusFader:Hide()
+    self.ProgressFadeIn:Hide()
+    self.ProgressFadeOut:Hide()
+    self.StatusLeft:SetText("")
+    self.StatusLeft:SetAlpha(0)
+  end
+
+  function panel:SetStatus(text)
+    if not text or text == "" then
+      self:ClearStatus()
+      return
+    end
+    self.ProgressFadeIn:Hide()
+    self.ProgressFadeOut:Hide()
+    self.StatusLeft:SetText(text)
+    self.StatusFader.elapsed = 0
+    self.StatusFader:Show()
+  end
+
+  function panel:StartProgress(total)
+    self.StatusFader:Hide()
+    self.ProgressFadeOut:Hide()
+    self.StatusLeft:SetText(string.format("Scanning: 0/%d", total))
+    self.StatusLeft:SetAlpha(0)
+    self.ProgressFadeIn.elapsed = 0
+    self.ProgressFadeIn:Show()
+  end
+
+  function panel:UpdateProgress(scanned, total)
+    self.StatusFader:Hide()
+    self.ProgressFadeOut:Hide()
     self.StatusLeft:SetText(string.format("Scanning: %d/%d", scanned, total))
-    self.StatusRight:SetText("")
+  end
+
+  function panel:CompleteProgress(scanned, total)
+    self.StatusFader:Hide()
+    self.ProgressFadeIn:Hide()
+    self.StatusLeft:SetText(string.format("Scanning: %d/%d |cff40ff40Complete|r", scanned, total))
+    self.StatusLeft:SetAlpha(1)
+    self.ProgressFadeOut.elapsed = 0
+    self.ProgressFadeOut:Show()
   end
 
   function panel:FlashFilterApplied()
