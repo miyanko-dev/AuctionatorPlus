@@ -1,6 +1,7 @@
 ## Interface: 120005
 ## Title: Flipper
-## Notes: Adds a panel to the shopping tab that displays potential flip deals found by scanning live auction listings.
+## Category: Auctions
+## Notes: Scans live auction listings through Auctionator to surface profitable commodity flips in a dedicated shopping-tab panel.
 ## Author: MIYANKO
 ## Version: 1.0.0
 ## Dependencies: Auctionator
