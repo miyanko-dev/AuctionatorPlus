@@ -5,7 +5,7 @@ local SCAN_TIMEOUT_SECONDS = 6
 local AH_CUT = 0.05
 
 local PANEL_WIDTH = 800
-local PANEL_HEIGHT = 500
+local PANEL_HEIGHT = 585
 local ROW_HEIGHT = 28
 
 FF = {}
@@ -20,6 +20,41 @@ FF.committedMinQuantity = 0
 FF.committedMaxOrderQty = 0
 FF.committedMinProfit = 0
 FF.committedMaxQtyPct = 0
+FF.sortProperty = "totalCost"
+FF.sortDirection = "asc"
+
+local SORT_OPTIONS = {
+  { key = "itemName",        label = "Item Name" },
+  { key = "displayQuantity", label = "Listed Qty" },
+  { key = "totalQuantity",   label = "Order Qty" },
+  { key = "totalCost",       label = "Invest" },
+  { key = "margin",          label = "Profit" },
+}
+
+local SORT_DIRECTIONS = {
+  { key = "asc",  label = "Ascending"  },
+  { key = "desc", label = "Descending" },
+}
+
+local function LabelForSortProperty(key)
+  for _, opt in ipairs(SORT_OPTIONS) do
+    if opt.key == key then return opt.label end
+  end
+  return ""
+end
+
+local function LabelForSortDirection(key)
+  for _, opt in ipairs(SORT_DIRECTIONS) do
+    if opt.key == key then return opt.label end
+  end
+  return ""
+end
+
+local function StripItemColor(name)
+  if not name then return "" end
+  name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  return name:lower()
+end
 
 local function KeyString(itemKey)
   return Auctionator.Utilities.ItemKeyString(itemKey)
@@ -39,6 +74,7 @@ local function CollectCommodityListings(itemID)
       table.insert(listings, {
         unitPrice = info.unitPrice,
         cost = info.unitPrice * quantity,
+        quantity = quantity,
       })
     end
   end
@@ -60,6 +96,7 @@ local function CollectItemListings(itemKey)
       table.insert(listings, {
         unitPrice = info.buyoutAmount / quantity,
         cost = info.buyoutAmount,
+        quantity = quantity,
       })
     end
   end
@@ -89,9 +126,8 @@ local function SummarizeFlip(flipListings, topPrice)
   local totalQuantity = 0
 
   for _, listing in ipairs(flipListings) do
-    local quantity = listing.cost / listing.unitPrice
     totalCost = totalCost + listing.cost
-    totalQuantity = totalQuantity + quantity
+    totalQuantity = totalQuantity + listing.quantity
   end
 
   local potentialProfit = totalQuantity * topPrice * (1 - AH_CUT) - totalCost
@@ -413,6 +449,9 @@ function FF:ComputeFlipForItem(key)
   if self.committedMaxInvest > 0 and summary.totalCost > self.committedMaxInvest then
     return
   end
+  if summary.margin <= 0 then
+    return
+  end
   if self.committedMinQuantity > 0 and cached.entry.totalQuantity < self.committedMinQuantity then
     return
   end
@@ -451,7 +490,6 @@ function FF:RebuildFlips()
 
   if self.panel then
     self.panel:Render()
-    self.panel:FlashFilterApplied()
   end
 end
 
@@ -540,11 +578,11 @@ local COL_PROFIT_W = 100
 local COL_BTN_W    = 100
 local COL_GAP      = 8
 
-local function CreateRow(parent, index)
-  local row = CreateFrame("Frame", nil, parent)
+local function InitRowWidgets(row)
+  if row.initialized then return end
+  row.initialized = true
+
   row:SetHeight(ROW_HEIGHT)
-  row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * ROW_HEIGHT)
-  row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -(index - 1) * ROW_HEIGHT)
 
   local sep = row:CreateTexture(nil, "ARTWORK")
   sep:SetHeight(1)
@@ -603,7 +641,7 @@ local function CreateRow(parent, index)
   row.Item:SetScript("OnLeave", function()
     GameTooltip_Hide()
   end)
-  row.Item:SetScript("OnClick", function(self, mouseButton)
+  row.Item:SetScript("OnClick", function()
     if IsModifiedClick("CHATLINK") and row.flip and row.flip.itemLink then
       ChatEdit_InsertLink(row.flip.itemLink)
     end
@@ -614,8 +652,19 @@ local function CreateRow(parent, index)
       FF:OpenItemDetails(row.flip)
     end
   end)
+end
 
-  return row
+local function UpdateRow(row, flip)
+  row.flip = flip
+  local itemText = flip.itemLink or flip.itemName or "?"
+  itemText = itemText:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  itemText = itemText:gsub("|T[^|]+|t", ""):gsub("|H[^|]+|h", ""):gsub("|h", "")
+  itemText = strtrim(itemText)
+  row.Item.Text:SetText(itemText)
+  row.Quantity:SetText(string.format("%.0f", flip.displayQuantity))
+  row.TotalCost:SetText(FormatGold(flip.totalCost))
+  row.OrderQty:SetText(string.format("%.0f", flip.totalQuantity))
+  row.Profit:SetText(FormatGold(flip.margin))
 end
 
 local function CreatePanel()
@@ -691,150 +740,124 @@ local function CreatePanel()
 
   local FILTER_LABEL_START_Y = -HEADING_H - HEADING_GAP
 
-  panel.MinQuantityLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinQuantityLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET, FILTER_LABEL_START_Y)
-  panel.MinQuantityLabel:SetJustifyH("LEFT")
-  panel.MinQuantityLabel:SetText("Min. Total Qty")
-  panel.MinQuantityLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+  local FILTER_INNER_W = PANEL_WIDTH - 2 * PAD - 2 * INPUT_INSET
+  local FILTER_FIELDS = 6
+  local FILTER_FIELD_W = 110
+  local FILTER_FIELD_GAP = (FILTER_INNER_W - FILTER_FIELDS * FILTER_FIELD_W) / (FILTER_FIELDS - 1)
 
-  panel.MinQuantityEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MinQuantityEditBox:SetSize(70, ROW_H)
-  panel.MinQuantityEditBox:SetPoint("TOPLEFT", panel.MinQuantityLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MinQuantityEditBox:SetAutoFocus(false)
-  panel.MinQuantityEditBox:SetNumeric(true)
-  panel.MinQuantityEditBox:SetMaxLetters(6)
-  panel.MinQuantityEditBox:SetText("1")
-  panel.MinQuantityEditBox:SetScript("OnEnterPressed", function()
-    panel.MinQuantityEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MinQuantityEditBox:SetScript("OnEscapePressed", function()
-    panel.MinQuantityEditBox:ClearFocus()
-  end)
+  local function FilterFieldX(index)
+    return INPUT_INSET + (index - 1) * (FILTER_FIELD_W + FILTER_FIELD_GAP)
+  end
 
-  panel.MaxOrderQtyLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MaxOrderQtyLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MaxOrderQtyLabel:SetJustifyH("LEFT")
-  panel.MaxOrderQtyLabel:SetText("Max. Order Qty")
-  panel.MaxOrderQtyLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+  local function CreateFilterField(index, labelText, maxLetters, defaultText)
+    local label = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    label:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", FilterFieldX(index), FILTER_LABEL_START_Y)
+    label:SetWidth(FILTER_FIELD_W)
+    label:SetJustifyH("LEFT")
+    label:SetText(labelText)
+    label:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  panel.MaxOrderQtyEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MaxOrderQtyEditBox:SetSize(70, ROW_H)
-  panel.MaxOrderQtyEditBox:SetPoint("TOPLEFT", panel.MaxOrderQtyLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MaxOrderQtyEditBox:SetAutoFocus(false)
-  panel.MaxOrderQtyEditBox:SetNumeric(true)
-  panel.MaxOrderQtyEditBox:SetMaxLetters(6)
-  panel.MaxOrderQtyEditBox:SetText("")
-  panel.MaxOrderQtyEditBox:SetScript("OnEnterPressed", function()
-    panel.MaxOrderQtyEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MaxOrderQtyEditBox:SetScript("OnEscapePressed", function()
-    panel.MaxOrderQtyEditBox:ClearFocus()
-  end)
+    local edit = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
+    edit:SetSize(FILTER_FIELD_W, ROW_H)
+    edit:SetPoint("TOPLEFT", label, "BOTTOMLEFT", 0, -LABEL_GAP)
+    edit:SetAutoFocus(false)
+    edit:SetNumeric(true)
+    edit:SetMaxLetters(maxLetters)
+    edit:SetText(defaultText or "")
+    edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    edit:SetScript("OnTextChanged", function() FF:RebuildFlips() end)
 
-  panel.MaxInvestLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MaxInvestLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MaxInvestLabel:SetJustifyH("LEFT")
-  panel.MaxInvestLabel:SetText("Max. Invest")
-  panel.MaxInvestLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+    return label, edit
+  end
 
-  panel.MaxInvestEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MaxInvestEditBox:SetSize(100, ROW_H)
-  panel.MaxInvestEditBox:SetPoint("TOPLEFT", panel.MaxInvestLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MaxInvestEditBox:SetAutoFocus(false)
-  panel.MaxInvestEditBox:SetNumeric(true)
-  panel.MaxInvestEditBox:SetMaxLetters(10)
-  panel.MaxInvestEditBox:SetText("")
-  panel.MaxInvestEditBox:SetScript("OnEnterPressed", function()
-    panel.MaxInvestEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MaxInvestEditBox:SetScript("OnEscapePressed", function()
-    panel.MaxInvestEditBox:ClearFocus()
-  end)
+  panel.MinQuantityLabel,  panel.MinQuantityEditBox  = CreateFilterField(1, "Min. List Qty (n)",     6,  "1")
+  panel.MaxOrderQtyLabel,  panel.MaxOrderQtyEditBox  = CreateFilterField(2, "Max. Order Qty. (n)",   6,  "")
+  panel.MaxQtyPctLabel,    panel.MaxQtyPctEditBox    = CreateFilterField(3, "Max. Order Qty. (%)",   3,  "")
+  panel.MaxInvestLabel,    panel.MaxInvestEditBox    = CreateFilterField(4, "Max. Invest (g)",       10, "")
+  panel.MinProfitLabel,    panel.MinProfitEditBox    = CreateFilterField(5, "Min. Profit (g)",       10, "")
+  panel.MinMarginLabel,    panel.MinMarginEditBox    = CreateFilterField(6, "Min. Margin (%)",       3,  tostring(math.floor((PRICE_JUMP_RATIO - 1) * 100 + 0.5)))
 
-  panel.MinProfitLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinProfitLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MinProfitLabel:SetJustifyH("LEFT")
-  panel.MinProfitLabel:SetText("Min. Profit")
-  panel.MinProfitLabel:SetTextColor(0.7, 0.7, 0.7, 1)
-
-  panel.MinProfitEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MinProfitEditBox:SetSize(100, ROW_H)
-  panel.MinProfitEditBox:SetPoint("TOPLEFT", panel.MinProfitLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MinProfitEditBox:SetAutoFocus(false)
-  panel.MinProfitEditBox:SetNumeric(true)
-  panel.MinProfitEditBox:SetMaxLetters(10)
-  panel.MinProfitEditBox:SetText("")
-  panel.MinProfitEditBox:SetScript("OnEnterPressed", function()
-    panel.MinProfitEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MinProfitEditBox:SetScript("OnEscapePressed", function()
-    panel.MinProfitEditBox:ClearFocus()
-  end)
-
-  panel.MinMarginLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MinMarginLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP + 70 + FIELD_GAP + 100 + FIELD_GAP + 100 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MinMarginLabel:SetJustifyH("LEFT")
-  panel.MinMarginLabel:SetText("Min. Margin %")
-  panel.MinMarginLabel:SetTextColor(0.7, 0.7, 0.7, 1)
-
-  panel.MinMarginEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MinMarginEditBox:SetSize(70, ROW_H)
-  panel.MinMarginEditBox:SetPoint("TOPLEFT", panel.MinMarginLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MinMarginEditBox:SetAutoFocus(false)
-  panel.MinMarginEditBox:SetNumeric(true)
-  panel.MinMarginEditBox:SetMaxLetters(3)
-  panel.MinMarginEditBox:SetText(tostring(math.floor((PRICE_JUMP_RATIO - 1) * 100 + 0.5)))
-  panel.MinMarginEditBox:SetScript("OnEnterPressed", function()
-    panel.MinMarginEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MinMarginEditBox:SetScript("OnEscapePressed", function()
-    panel.MinMarginEditBox:ClearFocus()
-  end)
-
-  panel.MaxQtyPctLabel = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.MaxQtyPctLabel:SetPoint("TOPLEFT", panel.FilterRow, "TOPLEFT", INPUT_INSET + 70 + FIELD_GAP + 70 + FIELD_GAP, FILTER_LABEL_START_Y)
-  panel.MaxQtyPctLabel:SetJustifyH("LEFT")
-  panel.MaxQtyPctLabel:SetText("Max. Qty %")
-  panel.MaxQtyPctLabel:SetTextColor(0.7, 0.7, 0.7, 1)
-
-  panel.MaxQtyPctEditBox = CreateFrame("EditBox", nil, panel.FilterRow, "InputBoxTemplate")
-  panel.MaxQtyPctEditBox:SetSize(70, ROW_H)
-  panel.MaxQtyPctEditBox:SetPoint("TOPLEFT", panel.MaxQtyPctLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
-  panel.MaxQtyPctEditBox:SetAutoFocus(false)
-  panel.MaxQtyPctEditBox:SetNumeric(true)
-  panel.MaxQtyPctEditBox:SetMaxLetters(3)
-  panel.MaxQtyPctEditBox:SetText("")
-  panel.MaxQtyPctEditBox:SetScript("OnEnterPressed", function()
-    panel.MaxQtyPctEditBox:ClearFocus()
-    FF:RebuildFlips()
-  end)
-  panel.MaxQtyPctEditBox:SetScript("OnEscapePressed", function()
-    panel.MaxQtyPctEditBox:ClearFocus()
-  end)
-
-  panel.SaveFilterBtn = CreateFrame("Button", nil, panel.FilterRow, "UIPanelButtonTemplate")
-  panel.SaveFilterBtn:SetSize(100, ROW_H)
-  panel.SaveFilterBtn:SetPoint("TOPRIGHT", panel.FilterRow, "TOPRIGHT", 0, 0)
-  panel.SaveFilterBtn:SetText("Apply Filter")
-  panel.SaveFilterBtn:GetFontString():SetTextColor(1, 0.82, 0)
-  panel.SaveFilterBtn:SetScript("OnClick", function() FF:RebuildFlips() end)
-
-  -- Section 4: Separator below filter, above table
+  -- Section 4: Separator below filter, above sort
   local sepAfterFilter = NewSeparator()
   sepAfterFilter:SetPoint("TOPLEFT", panel.FilterRow, "BOTTOMLEFT", 0, -GAP)
   sepAfterFilter:SetPoint("TOPRIGHT", panel.FilterRow, "BOTTOMRIGHT", 0, -GAP)
+
+  -- Section 4.5: Sort row (property + direction dropdowns)
+  local SORT_DROPDOWN_H = 24
+  local SORT_H = HEADING_H + HEADING_GAP + LABEL_H + LABEL_GAP + SORT_DROPDOWN_H
+
+  panel.SortRow = CreateFrame("Frame", nil, panel)
+  panel.SortRow:SetHeight(SORT_H)
+  panel.SortRow:SetPoint("LEFT", panel, "LEFT", PAD, 0)
+  panel.SortRow:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
+  panel.SortRow:SetPoint("TOP", sepAfterFilter, "BOTTOM", 0, -GAP)
+
+  panel.SortHeading = panel.SortRow:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+  panel.SortHeading:SetPoint("TOPLEFT", panel.SortRow, "TOPLEFT", 0, 0)
+  panel.SortHeading:SetJustifyH("LEFT")
+  panel.SortHeading:SetText("Sort")
+  panel.SortHeading:SetTextColor(1, 1, 1, 1)
+
+  panel.SortPropertyLabel = panel.SortRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.SortPropertyLabel:SetPoint("TOPLEFT", panel.SortRow, "TOPLEFT", INPUT_INSET, -HEADING_H - HEADING_GAP)
+  panel.SortPropertyLabel:SetJustifyH("LEFT")
+  panel.SortPropertyLabel:SetText("Sort by")
+  panel.SortPropertyLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  panel.SortPropertyDD = CreateFrame("DropdownButton", "FlipperSortPropertyDropdown", panel.SortRow, "WowStyle1DropdownTemplate")
+  panel.SortPropertyDD:SetSize(180, SORT_DROPDOWN_H)
+  panel.SortPropertyDD:SetPoint("TOPLEFT", panel.SortPropertyLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.SortPropertyDD:SetDefaultText(LabelForSortProperty(FF.sortProperty))
+  panel.SortPropertyDD:SetupMenu(function(dropdown, rootDescription)
+    for _, opt in ipairs(SORT_OPTIONS) do
+      local entry = opt
+      rootDescription:CreateRadio(
+        entry.label,
+        function() return FF.sortProperty == entry.key end,
+        function()
+          FF.sortProperty = entry.key
+          if FF.panel then FF.panel:Render() end
+        end
+      )
+    end
+  end)
+
+  panel.SortDirectionLabel = panel.SortRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+  panel.SortDirectionLabel:SetPoint("TOPLEFT", panel.SortRow, "TOPLEFT", INPUT_INSET + 180 + FIELD_GAP, -HEADING_H - HEADING_GAP)
+  panel.SortDirectionLabel:SetJustifyH("LEFT")
+  panel.SortDirectionLabel:SetText("Direction")
+  panel.SortDirectionLabel:SetTextColor(0.7, 0.7, 0.7, 1)
+
+  panel.SortDirectionDD = CreateFrame("DropdownButton", "FlipperSortDirectionDropdown", panel.SortRow, "WowStyle1DropdownTemplate")
+  panel.SortDirectionDD:SetSize(140, SORT_DROPDOWN_H)
+  panel.SortDirectionDD:SetPoint("TOPLEFT", panel.SortDirectionLabel, "BOTTOMLEFT", 0, -LABEL_GAP)
+  panel.SortDirectionDD:SetDefaultText(LabelForSortDirection(FF.sortDirection))
+  panel.SortDirectionDD:SetupMenu(function(dropdown, rootDescription)
+    for _, opt in ipairs(SORT_DIRECTIONS) do
+      local entry = opt
+      rootDescription:CreateRadio(
+        entry.label,
+        function() return FF.sortDirection == entry.key end,
+        function()
+          FF.sortDirection = entry.key
+          if FF.panel then FF.panel:Render() end
+        end
+      )
+    end
+  end)
+
+  -- Section 4.6: Separator below sort, above table
+  local sepAfterSort = NewSeparator()
+  sepAfterSort:SetPoint("TOPLEFT", panel.SortRow, "BOTTOMLEFT", 0, -GAP)
+  sepAfterSort:SetPoint("TOPRIGHT", panel.SortRow, "BOTTOMRIGHT", 0, -GAP)
 
   -- Section 5.1: Column headers
   panel.HeaderRow = CreateFrame("Frame", nil, panel)
   panel.HeaderRow:SetHeight(ROW_H)
   panel.HeaderRow:SetPoint("LEFT", panel, "LEFT", PAD, 0)
   panel.HeaderRow:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
-  panel.HeaderRow:SetPoint("TOP", sepAfterFilter, "BOTTOM", 0, -GAP)
+  panel.HeaderRow:SetPoint("TOP", sepAfterSort, "BOTTOM", 0, -GAP)
 
   panel.HeaderItem = panel.HeaderRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   panel.HeaderItem:SetPoint("LEFT", panel.HeaderRow, "LEFT", 0, 0)
@@ -871,14 +894,6 @@ local function CreatePanel()
   panel.HeaderProfit:SetText("Profit")
   panel.HeaderProfit:SetTextColor(0.7, 0.7, 0.7, 1)
 
-  panel.FilterAppliedText = panel.FilterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-  panel.FilterAppliedText:SetPoint("TOP", panel.SaveFilterBtn, "BOTTOM", 0, -4)
-  panel.FilterAppliedText:SetWidth(140)
-  panel.FilterAppliedText:SetJustifyH("CENTER")
-  panel.FilterAppliedText:SetText("Filter applied")
-  panel.FilterAppliedText:SetTextColor(0.251, 1, 0.251, 1)
-  panel.FilterAppliedText:SetAlpha(0)
-
   local function MakeFader(target)
     local fader = CreateFrame("Frame", nil, panel)
     fader:Hide()
@@ -900,8 +915,6 @@ local function CreatePanel()
     end)
     return fader
   end
-
-  panel.FilterAppliedFader = MakeFader(panel.FilterAppliedText)
 
   -- Section 6: Actions row (status left, Cancel + Scan for Flips right)
   panel.ActionsRow = CreateFrame("Frame", nil, panel)
@@ -974,39 +987,44 @@ local function CreatePanel()
   sepBeforeActions:SetPoint("RIGHT", panel, "RIGHT", -PAD, 0)
   sepBeforeActions:SetPoint("BOTTOM", panel.ActionsRow, "TOP", 0, GAP)
 
-  -- Section 8: Scroll area
+  -- Section 8: Scroll area (ScrollFrame + modern MinimalScrollBar)
   panel.Scroll = CreateFrame("ScrollFrame", "FlipperResultsScroll", panel)
   panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -GAP)
-  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "BOTTOMRIGHT", 0, GAP)
+  panel.Scroll:SetPoint("BOTTOMRIGHT", sepBeforeActions, "TOPRIGHT", -SCROLLBAR_W, GAP)
   panel.Scroll:EnableMouseWheel(true)
-  panel.Scroll:SetScript("OnMouseWheel", function(self, delta)
-    local scrollBar = panel.ScrollScrollBar
-    local step = ROW_HEIGHT * 2
-    local newValue = scrollBar:GetValue() - (delta * step)
-    local minVal, maxVal = scrollBar:GetMinMaxValues()
-    scrollBar:SetValue(math.max(minVal, math.min(maxVal, newValue)))
-  end)
-
-panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, "UIPanelScrollBarTemplate")
-  panel.ScrollScrollBar:SetPoint("TOPRIGHT", panel.Scroll, "TOPRIGHT", 0, -8)
-  panel.ScrollScrollBar:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", 0, 8)
-  panel.ScrollScrollBar:SetMinMaxValues(0, 0)
-  panel.ScrollScrollBar:SetValueStep(1)
-  panel.ScrollScrollBar:SetValue(0)
-  panel.ScrollScrollBar:Hide()
-  panel.ScrollScrollBar:SetScript("OnValueChanged", function(self, value)
-    panel.Scroll:SetVerticalScroll(value)
-  end)
 
   panel.Content = CreateFrame("Frame", nil, panel.Scroll)
-  panel.Content:SetSize(PANEL_WIDTH - PAD * 2 - SCROLLBAR_W, 1)
+  panel.Content:SetSize(PANEL_WIDTH - 2 * PAD - SCROLLBAR_W, 1)
   panel.Scroll:SetScrollChild(panel.Content)
 
+  panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel, "UIPanelScrollBarTemplate")
+  panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -16)
+  panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 16)
+  panel.ScrollScrollBar:SetWidth(16)
+  panel.ScrollScrollBar:SetMinMaxValues(0, 1)
+  panel.ScrollScrollBar:SetValueStep(0.01)
+  panel.ScrollScrollBar:Hide()
+
+  panel.ScrollScrollBar:SetScript("OnValueChanged", function(self, value)
+    local range = math.max(0, panel.Content:GetHeight() - panel.Scroll:GetHeight())
+    panel.Scroll:SetVerticalScroll(range * value)
+  end)
+
+  panel.Scroll:SetScript("OnMouseWheel", function(_, delta)
+    if panel.ScrollScrollBar:IsShown() then
+      local current = panel.ScrollScrollBar:GetValue()
+      local step = 0.05
+      panel.ScrollScrollBar:SetValue(math.max(0, math.min(1, current - delta * step)))
+    end
+  end)
+
+  panel.rows = {}
+
   panel.EmptyMessage = panel.Scroll:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  panel.EmptyMessage:SetPoint("LEFT", panel.Scroll, "LEFT", PAD, 0)
-  panel.EmptyMessage:SetPoint("RIGHT", panel.Scroll, "RIGHT", -PAD, 0)
-  panel.EmptyMessage:SetPoint("CENTER", panel.Scroll, "CENTER", 0, 0)
+  panel.EmptyMessage:SetPoint("TOPLEFT", panel.Scroll, "TOPLEFT", PAD, 0)
+  panel.EmptyMessage:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", -PAD, 0)
   panel.EmptyMessage:SetJustifyH("CENTER")
+  panel.EmptyMessage:SetJustifyV("MIDDLE")
   panel.EmptyMessage:SetWordWrap(true)
   panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then click Scan for Flips.")
   panel.EmptyMessage:SetTextColor(0.5, 0.5, 0.5, 1)
@@ -1017,8 +1035,6 @@ panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, 
   closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 4, 4)
   closeBtn:SetFrameLevel(panel:GetFrameLevel() + 10)
   closeBtn:SetScript("OnClick", function() panel:Hide() end)
-
-  panel.rows = {}
 
   function panel:SetScanningUI(active)
     if active then
@@ -1072,15 +1088,23 @@ panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, 
     self.ProgressFadeOut:Show()
   end
 
-  function panel:FlashFilterApplied()
-    self.FilterAppliedFader.elapsed = 0
-    self.FilterAppliedFader:Show()
-  end
-
   function panel:Render()
     local flips = FF.flips
+    local prop = FF.sortProperty or "totalCost"
+    local asc = (FF.sortDirection or "asc") == "asc"
 
-    table.sort(flips, function(a, b) return a.totalCost < b.totalCost end)
+    table.sort(flips, function(a, b)
+      local av, bv
+      if prop == "itemName" then
+        av = StripItemColor(a.itemName or a.itemLink)
+        bv = StripItemColor(b.itemName or b.itemLink)
+      else
+        av = a[prop] or 0
+        bv = b[prop] or 0
+      end
+      if asc then return av < bv end
+      return av > bv
+    end)
 
     if #flips == 0 then
       if FF.hasScanned then
@@ -1096,20 +1120,14 @@ panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, 
     for i, flip in ipairs(flips) do
       local row = self.rows[i]
       if not row then
-        row = CreateRow(self.Content, i)
+        row = CreateFrame("Frame", nil, self.Content)
+        row:SetHeight(ROW_HEIGHT)
+        row:SetPoint("TOPLEFT",  self.Content, "TOPLEFT",  0, -(i - 1) * ROW_HEIGHT)
+        row:SetPoint("TOPRIGHT", self.Content, "TOPRIGHT", 0, -(i - 1) * ROW_HEIGHT)
+        InitRowWidgets(row)
         self.rows[i] = row
       end
-
-      row.flip = flip
-      local itemText = flip.itemLink or flip.itemName or "?"
-      itemText = itemText:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-      itemText = itemText:gsub("|T[^|]+|t", ""):gsub("|H[^|]+|h", ""):gsub("|h", "")
-      itemText = strtrim(itemText)
-      row.Item.Text:SetText(itemText)
-      row.Quantity:SetText(string.format("%.0f", flip.displayQuantity))
-      row.TotalCost:SetText(FormatGold(flip.totalCost))
-      row.OrderQty:SetText(string.format("%.0f", flip.totalQuantity))
-      row.Profit:SetText(FormatGold(flip.margin))
+      UpdateRow(row, flip)
       row:Show()
     end
 
@@ -1118,15 +1136,14 @@ panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", panel.Scroll, 
       self.rows[i].flip = nil
     end
 
-    local neededHeight = #flips * ROW_HEIGHT
-    self.Content:SetHeight(math.max(neededHeight, 1))
+    local contentHeight = #flips * ROW_HEIGHT
+    self.Content:SetHeight(math.max(contentHeight, 1))
 
-    local scrollRange = math.max(0, neededHeight - self.Scroll:GetHeight())
-    self.ScrollScrollBar:SetMinMaxValues(0, scrollRange)
-
-    if scrollRange > 0 then
+    local visibleHeight = self.Scroll:GetHeight()
+    if contentHeight > visibleHeight then
       self.ScrollScrollBar:Show()
     else
+      self.Scroll:SetVerticalScroll(0)
       self.ScrollScrollBar:Hide()
     end
   end
@@ -1144,6 +1161,10 @@ local function TogglePanel()
   if panel:IsShown() then
     panel:Hide()
   else
+    if AuctionHouseFrame then
+      panel:ClearAllPoints()
+      panel:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", 10, 0)
+    end
     panel:Show()
     panel:Render()
   end
