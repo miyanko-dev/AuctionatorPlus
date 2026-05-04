@@ -1,5 +1,5 @@
 ## Interface: 120005
-## Title: Flipper
+## Title: Auctionator Flip Finder
 ## Category: Auctions
 ## Notes: Scans live auction listings through Auctionator to surface profitable commodity flips in a dedicated shopping-tab panel.
 ## Author: MIYANKO

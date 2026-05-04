@@ -1,4 +1,4 @@
-# Flipper
+# Auctionator Flip Finder
 
 A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/auctionator) that adds a **Flipper** button to the shopping tab. Click it to open a panel displaying potential flip deals with configurable filters.
 
