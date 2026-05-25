@@ -81,21 +81,20 @@ function FF.Adapter.GetAnchorButton()
   return AuctionatorShoppingFrame and AuctionatorShoppingFrame.ExportCSV or nil
 end
 
+-- Modern native dropdown (WowStyle2DropdownTemplate + MenuUtil radio API).
+-- The DropdownSelectionTextMixin drives the button label from the per-option
+-- isSelected callbacks, so no manual SetText path is needed when the value
+-- changes externally.
 function FF.Adapter.CreateDropdown(parent, width, options, getKey, setKey)
-  local dd = CreateFrame("Frame", nil, parent, "UIDropDownMenuTemplate")
-  UIDropDownMenu_SetWidth(dd, width)
-  UIDropDownMenu_SetText(dd, FF.Format.LabelForKey(options, getKey()))
-  UIDropDownMenu_Initialize(dd, function()
+  local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle2DropdownTemplate")
+  dd:SetWidth(width)
+  dd:SetDefaultText(FF.Format.LabelForKey(options, getKey()))
+  dd:SetupMenu(function(_, root)
     for _, opt in ipairs(options) do
-      local info = UIDropDownMenu_CreateInfo()
-      info.text = opt.label
-      info.checked = (getKey() == opt.key)
-      info.func = function()
-        setKey(opt.key)
-        UIDropDownMenu_SetText(dd, opt.label)
-        CloseDropDownMenus()
-      end
-      UIDropDownMenu_AddButton(info)
+      root:CreateRadio(
+        opt.label,
+        function() return getKey() == opt.key end,
+        function() setKey(opt.key) end)
     end
   end)
   return dd

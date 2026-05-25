@@ -10,14 +10,14 @@ local function CreateToggleButton()
     AuctionatorShoppingFrame, "UIPanelButtonTemplate"
   )
   button:SetSize(150, 22)
-  button:SetText("Flipper")
+  button:SetText("Flip Finder")
   button:SetPoint("RIGHT", anchor, "LEFT", -4, 0)
   button:SetFrameStrata(anchor:GetFrameStrata())
   button:SetFrameLevel(anchor:GetFrameLevel() + 1)
   button:SetScript("OnClick", FF.Panel.Toggle)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Flipper panel")
+    GameTooltip:SetText("Toggle Flip Finder panel")
     GameTooltip:AddLine(
       "Surfaces items whose lowest auctions span a price gap above the configured margin.",
       1, 1, 1, true)

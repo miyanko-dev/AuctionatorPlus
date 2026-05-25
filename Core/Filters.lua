@@ -1,56 +1,49 @@
 FF.Filters = {}
 
-local DefaultCut = FF.Constants.DefaultAHCutPercent / 100
-local DefaultRatio = FF.Constants.PriceJumpRatio
+local C = FF.Constants
+local AHCut = C.AHCutPercent / 100
+local Undercut = C.DefaultUndercutPercent / 100
+local DepositRate = C.DepositPercent / 100
+local HistoricalCap = C.HistoricalMultipleCap
 
 function FF.Filters.Commit()
   local panel = FF.panel
   if not panel then return end
 
-  local pct = tonumber(panel.MinMarginEditBox:GetText())
-  FF.committedRatio = (pct and pct > 0) and (1 + pct / 100) or DefaultRatio
+  local qtyPct = tonumber(panel.MaxQtyPctEditBox:GetText())
+  FF.committedMaxQtyPct = (qtyPct and qtyPct > 0) and qtyPct or 0
+
+  local depth = tonumber(panel.MinDepthEditBox:GetText())
+  FF.committedMinDepth = (depth and depth > 0) and depth or 0
 
   local gold = tonumber(panel.MaxInvestEditBox:GetText())
   FF.committedMaxInvest = (gold and gold > 0) and (gold * 10000) or 0
 
-  local qty = tonumber(panel.MinQuantityEditBox:GetText())
-  FF.committedMinQuantity = (qty and qty > 0) and qty or 1
+  local roi = tonumber(panel.MinROIEditBox:GetText())
+  FF.committedMinROI = (roi and roi > 0) and (roi / 100) or 0
+end
 
-  local orderQty = tonumber(panel.MaxOrderQtyEditBox:GetText())
-  FF.committedMaxOrderQty = (orderQty and orderQty > 0) and orderQty or 0
+local function GetVendorPrice(itemLink)
+  if not itemLink then return 0 end
+  local vendor = select(11, GetItemInfo(itemLink))
+  return vendor or 0
+end
 
-  local profitGold = tonumber(panel.MinProfitEditBox:GetText())
-  FF.committedMinProfit = (profitGold and profitGold > 0) and (profitGold * 10000) or 0
-
-  local qtyPct = tonumber(panel.MaxQtyPctEditBox:GetText())
-  FF.committedMaxQtyPct = (qtyPct and qtyPct > 0) and qtyPct or 0
-
-  local cutPct = tonumber(panel.AHCutEditBox:GetText())
-  FF.committedCut = (cutPct and cutPct >= 0) and (cutPct / 100) or DefaultCut
+local function GetHistoricalPrice(itemLink)
+  if not itemLink then return nil end
+  if not Auctionator or not Auctionator.API or not Auctionator.API.v1 then return nil end
+  local fetch = Auctionator.API.v1.GetAuctionPriceByItemLink
+  if not fetch then return nil end
+  local ok, price = pcall(fetch, "FlipFinder", itemLink)
+  if ok and type(price) == "number" and price > 0 then return price end
+  return nil
 end
 
 function FF.Filters.BuildFlip(scannedRecord)
   local listings = scannedRecord.listings
   if not listings or #listings < 2 then return nil end
 
-  local bracket, topPrice = FF.Bracket.Find(listings, FF.committedRatio)
-  if not bracket or not topPrice then return nil end
-
-  local summary = FF.Bracket.Summarize(bracket, topPrice, FF.committedCut)
-  if summary.margin <= 0 then return nil end
-
   local entry = scannedRecord.entry
-  local displayQuantity = (entry and entry.totalQuantity) or 0
-
-  if FF.committedMaxInvest > 0 and summary.totalCost > FF.committedMaxInvest then return nil end
-  if FF.committedMinQuantity > 0 and displayQuantity < FF.committedMinQuantity then return nil end
-  if FF.committedMaxOrderQty > 0 and summary.totalQuantity > FF.committedMaxOrderQty then return nil end
-  if FF.committedMinProfit > 0 and summary.margin < FF.committedMinProfit then return nil end
-  if FF.committedMaxQtyPct > 0 and displayQuantity > 0 then
-    local pct = (summary.totalQuantity / displayQuantity) * 100
-    if pct > FF.committedMaxQtyPct then return nil end
-  end
-
   local firstAuction = entry and entry.entries and entry.entries[1]
   local itemLink = (entry and entry.itemLink) or (firstAuction and firstAuction.itemLink)
   local itemName = entry and entry.itemName
@@ -58,16 +51,45 @@ function FF.Filters.BuildFlip(scannedRecord)
     itemName = GetItemInfo(itemLink)
   end
 
+  local isCommodity = scannedRecord.isCommodity == true
+  local vendorPrice = GetVendorPrice(itemLink)
+  local depositPerUnit = isCommodity and 0 or (vendorPrice * DepositRate)
+  local historicalPrice = GetHistoricalPrice(itemLink)
+
+  local best = FF.Bracket.FindBest(listings, {
+    cut = AHCut,
+    undercut = Undercut,
+    depositPerUnit = depositPerUnit,
+    vendorPrice = vendorPrice,
+    historicalPrice = historicalPrice,
+    maxHistoricalMultiple = HistoricalCap,
+  })
+  if not best then return nil end
+
+  if best.roi < FF.committedMinROI then return nil end
+  if FF.committedMinDepth > 0 and best.sellSideDepth < FF.committedMinDepth then return nil end
+  if FF.committedMaxInvest > 0 and best.totalCost > FF.committedMaxInvest then return nil end
+
+  local displayQuantity = (entry and entry.totalQuantity) or 0
+  local relativeQuantity = (displayQuantity > 0) and (best.totalQuantity / displayQuantity * 100) or 0
+  if FF.committedMaxQtyPct > 0 and relativeQuantity > FF.committedMaxQtyPct then return nil end
+
   return {
     entry = entry,
     itemKey = entry and entry.itemKey,
     itemLink = itemLink,
     itemName = itemName,
-    topPrice = summary.topPrice,
-    margin = summary.margin,
-    totalCost = summary.totalCost,
-    totalQuantity = summary.totalQuantity,
+    topPrice = best.topPrice,
+    sellPrice = best.sellPrice,
+    margin = best.margin,
+    totalCost = best.totalCost,
+    totalQuantity = best.totalQuantity,
     displayQuantity = displayQuantity,
+    relativeQuantity = relativeQuantity,
+    sellSideDepth = best.sellSideDepth,
+    depositCost = best.depositCost,
+    roi = best.roi,
+    isCommodity = isCommodity,
   }
 end
 
@@ -84,8 +106,8 @@ function FF.Filters.RebuildAll()
 end
 
 function FF.Filters.SortFlips(flips)
-  local prop = FF.sortProperty or "totalCost"
-  local asc = (FF.sortDirection or "asc") == "asc"
+  local prop = FF.sortProperty or "roi"
+  local asc = (FF.sortDirection or "desc") == "asc"
   table.sort(flips, function(a, b)
     local av, bv
     if prop == "itemName" then

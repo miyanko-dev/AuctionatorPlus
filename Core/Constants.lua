@@ -1,31 +1,22 @@
 FF.Constants = {
-  PriceJumpRatio = 1.10,
-  DefaultAHCutPercent = 5,
+  DefaultMinROIPercent = 20,
+  MinPriceGapPercent = 15,
+  AHCutPercent = 5,
+  DepositPercent = 5,
+  DefaultUndercutPercent = 2,
+  HistoricalMultipleCap = 3,
   ScanTimeoutSeconds = 6,
 
   PanelWidth = 800,
-  PanelHeight = 585,
+  PanelHeight = 540,
   RowHeight = 28,
 
   Columns = {
-    Item   = 220,
-    Qty    = 90,
-    Order  = 90,
-    Cost   = 90,
-    Profit = 100,
+    Item   = 200,
+    RelQty = 175,
+    Depth  = 130,
+    Cost   = 115,
+    ROI    = 85,
     Gap    = 8,
-  },
-
-  SortOptions = {
-    { key = "itemName",        label = "Item Name"  },
-    { key = "displayQuantity", label = "Listed Qty" },
-    { key = "totalQuantity",   label = "Order Qty"  },
-    { key = "totalCost",       label = "Invest"     },
-    { key = "margin",          label = "Profit"     },
-  },
-
-  SortDirections = {
-    { key = "asc",  label = "Ascending"  },
-    { key = "desc", label = "Descending" },
   },
 }

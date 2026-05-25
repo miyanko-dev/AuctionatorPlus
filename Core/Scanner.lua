@@ -46,11 +46,11 @@ function FF.Scanner.Abort()
   end
 end
 
-local function onListingsReady(entry, listings)
+local function onListingsReady(entry, listings, isCommodity)
   if not FF.Scanner.scanning then return end
 
   if listings and #listings >= 2 then
-    local record = { entry = entry, listings = listings }
+    local record = { entry = entry, listings = listings, isCommodity = isCommodity }
     table.insert(FF.scanned, record)
 
     local flip = FF.Filters.BuildFlip(record)

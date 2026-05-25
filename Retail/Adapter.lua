@@ -133,7 +133,7 @@ local function HandleScanResult(itemKeyOrID)
   end
 
   if scanState.onListings then
-    scanState.onListings(scanState.currentEntry, listings)
+    scanState.onListings(scanState.currentEntry, listings, scanState.currentIsCommodity)
   end
 
   ScanNext()
@@ -172,9 +172,9 @@ function FF.Adapter.OpenFlipDetails(flip)
   term = FF.Format.SanitizeSearchTerm(term)
   if not term then return end
 
-  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "Flipper", { term })
+  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "Flip Finder", { term })
   if not ok then
-    pcall(Auctionator.API.v1.MultiSearch, "Flipper", { term })
+    pcall(Auctionator.API.v1.MultiSearch, "Flip Finder", { term })
   end
 end
 
