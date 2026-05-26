@@ -364,25 +364,22 @@ function FF.Panel.Create()
   panel.Content:SetSize(C.PanelWidth - 2 * PAD_X - 2 * SECTION_INNER_PAD - 2 * SECTION_BODY_INSET - SCROLLBAR_W, 1)
   panel.Scroll:SetScrollChild(panel.Content)
 
-  panel.ScrollScrollBar = CreateFrame("Slider", "FlipperScrollBar", tableBody, "UIPanelScrollBarTemplate")
-  panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -16)
-  panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 16)
-  panel.ScrollScrollBar:SetWidth(SCROLLBAR_W)
-  panel.ScrollScrollBar:SetMinMaxValues(0, 1)
-  panel.ScrollScrollBar:SetValueStep(0.01)
-  panel.ScrollScrollBar:Hide()
+  -- Native minimal scrollbar from the in-game Options panel (MinimalScrollBar).
+  panel.ScrollScrollBar = CreateFrame("EventFrame", "FlipperScrollBar", tableBody, "MinimalScrollBar")
+  panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -4)
+  panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 7)
+  panel.ScrollScrollBar:SetHideIfUnscrollable(true)
+  panel.ScrollScrollBar:Init(1, 0.25)
 
-  panel.ScrollScrollBar:SetScript("OnValueChanged", function(self, value)
+  panel.ScrollScrollBar:RegisterCallback("OnScroll", function(_, scrollPercentage)
     local range = math.max(0, panel.Content:GetHeight() - panel.Scroll:GetHeight())
-    panel.Scroll:SetVerticalScroll(range * value)
-  end)
+    panel.Scroll:SetVerticalScroll(range * scrollPercentage)
+  end, panel.Scroll)
 
   panel.Scroll:SetScript("OnMouseWheel", function(_, delta)
-    if panel.ScrollScrollBar:IsShown() then
-      local current = panel.ScrollScrollBar:GetValue()
-      local step = 0.05
-      panel.ScrollScrollBar:SetValue(math.max(0, math.min(1, current - delta * step)))
-    end
+    if not panel.ScrollScrollBar:HasScrollableExtent() then return end
+    local pct = panel.ScrollScrollBar:GetScrollPercentage() - delta * 0.1
+    panel.ScrollScrollBar:SetScrollPercentage(math.max(0, math.min(1, pct)))
   end)
 
   panel.rows = {}
@@ -529,13 +526,11 @@ function FF.Panel.Create()
     local contentHeight = #FF.flips * C.RowHeight
     self.Content:SetHeight(math.max(contentHeight, 1))
 
-    local visibleHeight = self.Scroll:GetHeight()
-    if contentHeight > visibleHeight then
-      self.ScrollScrollBar:Show()
-    else
-      self.Scroll:SetVerticalScroll(0)
-      self.ScrollScrollBar:Hide()
-    end
+    local viewport = self.Scroll:GetHeight()
+    local visiblePct = math.min(1, viewport / math.max(contentHeight, 1))
+    self.ScrollScrollBar:SetVisibleExtentPercentage(visiblePct)
+    local range = math.max(0, contentHeight - viewport)
+    self.Scroll:SetVerticalScroll(range * self.ScrollScrollBar:GetScrollPercentage())
   end
 
   FF.panel = panel
