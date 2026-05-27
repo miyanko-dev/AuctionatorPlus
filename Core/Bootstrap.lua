@@ -39,16 +39,16 @@ local function CreateStatToggleButton()
     AuctionatorShoppingFrame, "UIPanelButtonTemplate"
   )
   button:SetSize(120, 22)
-  button:SetText("Stat Filter")
+  button:SetText("Stat Finder")
   button:SetPoint("RIGHT", FF.toggleButton, "LEFT", -4, 0)
   button:SetFrameStrata(FF.toggleButton:GetFrameStrata())
   button:SetFrameLevel(FF.toggleButton:GetFrameLevel())
   button:SetScript("OnClick", FF.StatPanel.Toggle)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Stat Filter panel")
+    GameTooltip:SetText("Toggle Stat Finder panel")
     GameTooltip:AddLine(
-      "Filters Auctionator shopping results by item stats. Enter comma-separated terms like agility, stamina, dps.",
+      "Finds items in Auctionator shopping results by item stats. Enter comma-separated terms like agility, stamina, dps.",
       1, 1, 1, true)
     GameTooltip:Show()
   end)

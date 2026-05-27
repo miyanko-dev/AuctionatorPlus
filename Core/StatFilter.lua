@@ -74,7 +74,7 @@ function FF.StatFilter.Abort()
   FF.StatFilter.generation = FF.StatFilter.generation + 1
   if FF.statPanel then
     FF.statPanel:SetRunningUI(false)
-    FF.statPanel:SetStatus("Filter cancelled")
+    FF.statPanel:SetStatus("Search cancelled")
   end
 end
 

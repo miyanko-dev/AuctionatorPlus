@@ -161,7 +161,7 @@ function FF.StatPanel.Create()
   panel:Hide()
 
   if panel.SetBackdrop then panel:SetBackdrop(PANEL_BACKDROP) end
-  buildTitleHeader(panel, "Stat Filter")
+  buildTitleHeader(panel, "Stat Finder")
 
   local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
@@ -219,7 +219,7 @@ function FF.StatPanel.Create()
   panel.ActionButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
   panel.ActionButton:SetSize(ACTION_BUTTON_W, ACTION_BUTTON_H)
   panel.ActionButton:SetPoint("BOTTOM", content, "BOTTOM", 0, 0)
-  panel.ActionButton:SetText("Filter Stats")
+  panel.ActionButton:SetText("Find Matches")
   panel.ActionButton:GetFontString():SetTextColor(1, 0.82, 0)
   panel.ActionButton:SetScript("OnClick", function()
     if FF.StatFilter.running then
@@ -272,7 +272,7 @@ function FF.StatPanel.Create()
   panel.EmptyMessage:SetJustifyV("MIDDLE")
   panel.EmptyMessage:SetWordWrap(true)
   panel.EmptyMessage:SetTextColor(0.55, 0.55, 0.55, 1)
-  panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then enter stats above and click Filter Stats.")
+  panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then enter stats above and click Find Matches.")
 
   panel.StatusCenter = tableBody:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
   panel.StatusCenter:SetPoint("TOPLEFT", panel.Scroll, "TOPLEFT", 0, 0)
@@ -302,9 +302,9 @@ function FF.StatPanel.Create()
 
   function panel:SetRunningUI(active)
     if active then
-      self.ActionButton:SetText("Cancel Filter")
+      self.ActionButton:SetText("Cancel Search")
     else
-      self.ActionButton:SetText("Filter Stats")
+      self.ActionButton:SetText("Find Matches")
     end
   end
 
@@ -329,21 +329,21 @@ function FF.StatPanel.Create()
 
   function panel:StartProgress(total)
     self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Filtering: 0/%d", total))
+    self.StatusCenter:SetText(string.format("Searching: 0/%d", total))
     self.StatusCenter:SetAlpha(1)
     self.StatusCenter:Show()
   end
 
   function panel:UpdateProgress(scanned, total)
     self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Filtering: %d/%d", scanned, total))
+    self.StatusCenter:SetText(string.format("Searching: %d/%d", scanned, total))
     self.StatusCenter:SetAlpha(1)
     self.StatusCenter:Show()
   end
 
   function panel:CompleteProgress(scanned, total)
     self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Filtering: %d/%d  Complete", scanned, total))
+    self.StatusCenter:SetText(string.format("Searching: %d/%d  Complete", scanned, total))
     self.StatusCenter:SetAlpha(1)
     self.StatusCenter:Show()
     self.StatusFadeOut.elapsed = 0
@@ -361,7 +361,7 @@ function FF.StatPanel.Create()
       if FF.StatFilter.scannedCount > 0 then
         self.EmptyMessage:SetText("No items matched. Try broader terms or run a wider shopping search.")
       else
-        self.EmptyMessage:SetText("Run a shopping list search in Auctionator, then enter stats above and click Filter Stats.")
+        self.EmptyMessage:SetText("Run a shopping list search in Auctionator, then enter stats above and click Find Matches.")
       end
       self.EmptyMessage:Show()
     end
