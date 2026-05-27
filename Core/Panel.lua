@@ -162,8 +162,8 @@ local function UpdateRow(row, flip)
 end
 
 local function GetAHFrame()
-  if FF.Adapter and FF.Adapter.GetAuctionHouseFrame then
-    return FF.Adapter.GetAuctionHouseFrame()
+  if FF.Adapter and FF.Adapter.GetAHFrame then
+    return FF.Adapter.GetAHFrame()
   end
   return nil
 end
@@ -264,11 +264,10 @@ function FF.Panel.Create()
 
   local filtersBody = panel.FiltersSection.body
   local colCursor = SECTION_BODY_INSET
+  panel.inputs = {}
   for _, def in ipairs(FILTER_DEFS) do
-    local label, edit, mini = CreateFilterField(filtersBody, colCursor, def)
-    panel[def.key .. "Label"] = label
-    panel[def.key .. "EditBox"] = edit
-    panel[def.key .. "MiniHelper"] = mini
+    local _, edit = CreateFilterField(filtersBody, colCursor, def)
+    panel.inputs[def.key] = edit
     colCursor = colCursor + def.width + FIELD_GAP
   end
 
@@ -364,7 +363,6 @@ function FF.Panel.Create()
   panel.Content:SetSize(C.PanelWidth - 2 * PAD_X - 2 * SECTION_INNER_PAD - 2 * SECTION_BODY_INSET - SCROLLBAR_W, 1)
   panel.Scroll:SetScrollChild(panel.Content)
 
-  -- Native minimal scrollbar from the in-game Options panel (MinimalScrollBar).
   panel.ScrollScrollBar = CreateFrame("EventFrame", "FlipperScrollBar", tableBody, "MinimalScrollBar")
   panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -4)
   panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 7)

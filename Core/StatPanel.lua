@@ -138,8 +138,8 @@ local function UpdateRow(row, match)
 end
 
 local function GetAHFrame()
-  if FF.Adapter and FF.Adapter.GetAuctionHouseFrame then
-    return FF.Adapter.GetAuctionHouseFrame()
+  if FF.Adapter and FF.Adapter.GetAHFrame then
+    return FF.Adapter.GetAHFrame()
   end
   return nil
 end
@@ -237,7 +237,7 @@ function FF.StatPanel.Create()
 
   local tableBody = panel.TableSection.body
 
-  panel.Scroll = CreateFrame("ScrollFrame", "FlipperStatResultsScroll", tableBody)
+  panel.Scroll = CreateFrame("ScrollFrame", "FlipperStatScroll", tableBody)
   panel.Scroll:SetPoint("TOPLEFT", tableBody, "TOPLEFT", SECTION_BODY_INSET, 0)
   panel.Scroll:SetPoint("BOTTOMRIGHT", tableBody, "BOTTOMRIGHT", -SECTION_BODY_INSET - SCROLLBAR_W, 0)
   panel.Scroll:EnableMouseWheel(true)

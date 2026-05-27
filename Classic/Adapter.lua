@@ -1,13 +1,12 @@
 FF.Adapter = {}
 
-local cachedResults = {}
 local resultsByKey = {}
 
 function FF.Adapter.KeyForEntry(entry)
   return entry.itemString or tostring(entry.itemLink)
 end
 
-local function CollectListingsFromResult(result)
+local function CollectListings(result)
   local listings = {}
   local player = (GetUnitName("player"))
   if not result or not result.entries then return listings end
@@ -34,9 +33,7 @@ local function StoreResults(entries)
   if type(entries) ~= "table" then return end
   for _, result in ipairs(entries) do
     if result and result.entries then
-      local key = FF.Adapter.KeyForEntry(result)
-      resultsByKey[key] = result
-      table.insert(cachedResults, result)
+      resultsByKey[FF.Adapter.KeyForEntry(result)] = result
     end
   end
 end
@@ -45,8 +42,7 @@ function FF.Adapter.ScanEntries(entries, onListings, onComplete)
   for _, entry in ipairs(entries) do
     local key = FF.Adapter.KeyForEntry(entry)
     local result = resultsByKey[key] or entry
-    local listings = CollectListingsFromResult(result)
-    onListings(entry, listings)
+    onListings(entry, CollectListings(result))
   end
   onComplete()
 end
@@ -73,15 +69,15 @@ function FF.Adapter.OpenFlipDetails(flip)
   end
 end
 
-function FF.Adapter.GetAuctionHouseFrame()
+function FF.Adapter.GetAHFrame()
   return AuctionFrame
 end
 
-function FF.Adapter.IsAuctionHouseVisible()
+function FF.Adapter.IsAHVisible()
   return AuctionFrame ~= nil and AuctionFrame:IsShown()
 end
 
-local function NameMatchesAuctionatorDetail(name)
+local function IsDetailFrame(name)
   if type(name) ~= "string" then return false end
   if name:match("^Auctionator.*Sell") then return true end
   if name:match("^Auctionator.*SaleItem") then return true end
@@ -101,7 +97,7 @@ function FF.Adapter.ShouldSuppressTooltip(tooltip)
         and node.IsShown and node:IsShown() then
       return true
     end
-    if NameMatchesAuctionatorDetail(name)
+    if IsDetailFrame(name)
         and node.IsShown and node:IsShown() then
       return true
     end
@@ -110,15 +106,15 @@ function FF.Adapter.ShouldSuppressTooltip(tooltip)
   return false
 end
 
-function FF.Adapter.RegisterTooltipHook(handler)
+function FF.Adapter.RegisterTooltipHook(apply)
   if FF.Adapter._tooltipHooked then return end
-  if type(handler) ~= "function" then return end
+  if type(apply) ~= "function" then return end
 
   local function dispatch(tooltip)
     if not tooltip or not tooltip.GetItem then return end
     local _, link = tooltip:GetItem()
     if not link or link == "" then return end
-    pcall(handler, tooltip, link)
+    pcall(apply, tooltip, link)
   end
 
   if GameTooltip and GameTooltip.HookScript then
@@ -134,10 +130,6 @@ function FF.Adapter.GetAnchorButton()
   return AuctionatorShoppingFrame and AuctionatorShoppingFrame.ExportCSV or nil
 end
 
--- Modern native dropdown (WowStyle2DropdownTemplate + MenuUtil radio API).
--- The DropdownSelectionTextMixin drives the button label from the per-option
--- isSelected callbacks, so no manual SetText path is needed when the value
--- changes externally.
 function FF.Adapter.CreateDropdown(parent, width, options, getKey, setKey)
   local dd = CreateFrame("DropdownButton", nil, parent, "WowStyle2DropdownTemplate")
   dd:SetWidth(width)
@@ -155,7 +147,6 @@ end
 
 local function ReceiveEvent(_, eventName, eventData)
   if eventName == Auctionator.Shopping.Tab.Events.SearchStart then
-    cachedResults = {}
     resultsByKey = {}
     FF.Scanner.ResetCollected()
   elseif eventName == Auctionator.Shopping.Tab.Events.SearchIncrementalUpdate then

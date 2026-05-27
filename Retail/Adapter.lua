@@ -178,15 +178,15 @@ function FF.Adapter.OpenFlipDetails(flip)
   end
 end
 
-function FF.Adapter.GetAuctionHouseFrame()
+function FF.Adapter.GetAHFrame()
   return AuctionHouseFrame
 end
 
-function FF.Adapter.IsAuctionHouseVisible()
+function FF.Adapter.IsAHVisible()
   return AuctionHouseFrame ~= nil and AuctionHouseFrame:IsShown()
 end
 
-local function NameMatchesAuctionatorDetail(name)
+local function IsDetailFrame(name)
   if type(name) ~= "string" then return false end
   if name:match("^Auctionator.*Sell") then return true end
   if name:match("^Auctionator.*SaleItem") then return true end
@@ -216,7 +216,7 @@ function FF.Adapter.ShouldSuppressTooltip(tooltip)
     end
     if node.GetName then
       local name = node:GetName()
-      if NameMatchesAuctionatorDetail(name)
+      if IsDetailFrame(name)
           and node.IsShown and node:IsShown() then
         return true
       end
@@ -226,26 +226,26 @@ function FF.Adapter.ShouldSuppressTooltip(tooltip)
   return false
 end
 
-function FF.Adapter.RegisterTooltipHook(handler)
+function FF.Adapter.RegisterTooltipHook(apply)
   if FF.Adapter._tooltipHooked then return end
-  if type(handler) ~= "function" then return end
+  if type(apply) ~= "function" then return end
   if not (TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall
       and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item) then
     return
   end
   FF.Adapter._tooltipHooked = true
 
-  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
-    local link = data and data.hyperlink
-    if (not link or link == "") and data and data.id and C_Item and C_Item.GetItemInfo then
-      link = select(2, C_Item.GetItemInfo(data.id))
+  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, tipData)
+    local link = tipData and tipData.hyperlink
+    if (not link or link == "") and tipData and tipData.id and C_Item and C_Item.GetItemInfo then
+      link = select(2, C_Item.GetItemInfo(tipData.id))
     end
     if (not link or link == "") and TooltipUtil and TooltipUtil.GetDisplayedItem then
       local _name, displayedLink = TooltipUtil.GetDisplayedItem(tooltip)
       link = displayedLink
     end
     if not link or link == "" then return end
-    pcall(handler, tooltip, link)
+    pcall(apply, tooltip, link)
   end)
 end
 
@@ -259,11 +259,10 @@ function FF.Adapter.CreateDropdown(parent, width, options, getKey, setKey)
   dd:SetDefaultText(FF.Format.LabelForKey(options, getKey()))
   dd:SetupMenu(function(_, rootDescription)
     for _, opt in ipairs(options) do
-      local entry = opt
       rootDescription:CreateRadio(
-        entry.label,
-        function() return getKey() == entry.key end,
-        function() setKey(entry.key) end
+        opt.label,
+        function() return getKey() == opt.key end,
+        function() setKey(opt.key) end
       )
     end
   end)

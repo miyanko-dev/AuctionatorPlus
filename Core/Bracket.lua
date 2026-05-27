@@ -1,7 +1,7 @@
 FF.Bracket = {}
 
 local C = FF.Constants
-local RATIO_FLOOR = 1 + C.MinPriceGapPercent / 100
+local RATIO_FLOOR = 1 + C.MinGapPercent / 100
 
 function FF.Bracket.FindBest(listings, options)
   local n = #listings

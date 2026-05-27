@@ -30,12 +30,12 @@ local function CreateToggleButton()
   return true
 end
 
-local function CreateStatToggleButton()
+local function CreateStatButton()
   if FF.statToggleButton then return true end
   if not FF.toggleButton then return false end
 
   local button = CreateFrame(
-    "Button", "FlipperStatFilterButton",
+    "Button", "FlipperStatButton",
     AuctionatorShoppingFrame, "UIPanelButtonTemplate"
   )
   button:SetSize(120, 22)
@@ -62,7 +62,7 @@ end
 local function EnsureToggleButton(attempt)
   attempt = attempt or 1
   local flipReady = CreateToggleButton()
-  local statReady = flipReady and CreateStatToggleButton()
+  local statReady = flipReady and CreateStatButton()
   if (flipReady and statReady) or attempt > 20 then return end
   C_Timer.After(0.5, function() EnsureToggleButton(attempt + 1) end)
 end

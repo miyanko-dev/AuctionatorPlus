@@ -10,16 +10,16 @@ function FF.Filters.Commit()
   local panel = FF.panel
   if not panel then return end
 
-  local qtyPct = tonumber(panel.MaxQtyPctEditBox:GetText())
+  local qtyPct = tonumber(panel.inputs.MaxQtyPct:GetText())
   FF.committedMaxQtyPct = (qtyPct and qtyPct > 0) and qtyPct or 0
 
-  local depth = tonumber(panel.MinDepthEditBox:GetText())
+  local depth = tonumber(panel.inputs.MinDepth:GetText())
   FF.committedMinDepth = (depth and depth > 0) and depth or 0
 
-  local gold = tonumber(panel.MaxInvestEditBox:GetText())
+  local gold = tonumber(panel.inputs.MaxInvest:GetText())
   FF.committedMaxInvest = (gold and gold > 0) and (gold * 10000) or 0
 
-  local roi = tonumber(panel.MinROIEditBox:GetText())
+  local roi = tonumber(panel.inputs.MinROI:GetText())
   FF.committedMinROI = (roi and roi > 0) and (roi / 100) or 0
 end
 

@@ -10,12 +10,12 @@ local function EnsureScanTooltip()
   return scanTip
 end
 
-local function ReadFromTooltipInfo(itemLink)
+local function ReadTooltipInfo(itemLink)
   if not (C_TooltipInfo and C_TooltipInfo.GetHyperlink) then return nil end
-  local data = C_TooltipInfo.GetHyperlink(itemLink)
-  if not data or not data.lines or #data.lines == 0 then return nil end
+  local tipInfo = C_TooltipInfo.GetHyperlink(itemLink)
+  if not tipInfo or not tipInfo.lines or #tipInfo.lines == 0 then return nil end
   local parts = {}
-  for _, line in ipairs(data.lines) do
+  for _, line in ipairs(tipInfo.lines) do
     local left = line.leftText
     local right = line.rightText
     if type(left) == "string" and left ~= "" then table.insert(parts, left) end
@@ -25,7 +25,7 @@ local function ReadFromTooltipInfo(itemLink)
   return table.concat(parts, "\n"):lower()
 end
 
-local function ReadFromScanTooltip(itemLink)
+local function ReadScanTooltip(itemLink)
   local tip = EnsureScanTooltip()
   tip:ClearLines()
   tip:SetHyperlink(itemLink)
@@ -50,9 +50,9 @@ end
 
 function FF.StatScan.ReadItemText(itemLink)
   if type(itemLink) ~= "string" or itemLink == "" then return nil end
-  local text = ReadFromTooltipInfo(itemLink)
+  local text = ReadTooltipInfo(itemLink)
   if text and text:find("%S") then return text end
-  return ReadFromScanTooltip(itemLink)
+  return ReadScanTooltip(itemLink)
 end
 
 local function ItemIDFromLink(itemLink)

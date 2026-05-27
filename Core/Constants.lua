@@ -1,6 +1,6 @@
 FF.Constants = {
   DefaultMinROIPercent = 20,
-  MinPriceGapPercent = 15,
+  MinGapPercent = 15,
   AHCutPercent = 5,
   DepositPercent = 5,
   DefaultUndercutPercent = 2,

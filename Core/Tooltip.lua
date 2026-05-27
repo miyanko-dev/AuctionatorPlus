@@ -33,8 +33,8 @@ end
 
 function FF.Tooltip.Apply(tooltip, itemLink)
   if not tooltip or not itemLink then return end
-  if not (FF.Adapter and FF.Adapter.IsAuctionHouseVisible
-      and FF.Adapter.IsAuctionHouseVisible()) then
+  if not (FF.Adapter and FF.Adapter.IsAHVisible
+      and FF.Adapter.IsAHVisible()) then
     return
   end
   if FF.Adapter.ShouldSuppressTooltip and FF.Adapter.ShouldSuppressTooltip(tooltip) then
