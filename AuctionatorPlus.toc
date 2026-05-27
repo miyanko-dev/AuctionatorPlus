@@ -1,7 +1,7 @@
 ## Interface: 120005, 11508
-## Title: Auctionator Flip Finder
+## Title: Auctionator Plus
 ## Category: Auctions
-## Notes: Surfaces profitable flips from your Auctionator shopping searches, shown in a panel docked to the Auction House.
+## Notes: Companion add-on for Auctionator. Adds price-history tooltips, an item-stat filter, and a flip-finder panel to the Auction House.
 ## Author: MIYANKO
 ## Version: 2.0.0
 ## Dependencies: Auctionator

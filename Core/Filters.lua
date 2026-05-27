@@ -34,7 +34,7 @@ local function GetHistoricalPrice(itemLink)
   if not Auctionator or not Auctionator.API or not Auctionator.API.v1 then return nil end
   local fetch = Auctionator.API.v1.GetAuctionPriceByItemLink
   if not fetch then return nil end
-  local ok, price = pcall(fetch, "FlipFinder", itemLink)
+  local ok, price = pcall(fetch, "Auctionator Plus", itemLink)
   if ok and type(price) == "number" and price > 0 then return price end
   return nil
 end

@@ -172,14 +172,81 @@ function FF.Adapter.OpenFlipDetails(flip)
   term = FF.Format.SanitizeSearchTerm(term)
   if not term then return end
 
-  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "Flip Finder", { term })
+  local ok = pcall(Auctionator.API.v1.MultiSearchExact, "Auctionator Plus", { term })
   if not ok then
-    pcall(Auctionator.API.v1.MultiSearch, "Flip Finder", { term })
+    pcall(Auctionator.API.v1.MultiSearch, "Auctionator Plus", { term })
   end
 end
 
 function FF.Adapter.GetAuctionHouseFrame()
   return AuctionHouseFrame
+end
+
+function FF.Adapter.IsAuctionHouseVisible()
+  return AuctionHouseFrame ~= nil and AuctionHouseFrame:IsShown()
+end
+
+local function NameMatchesAuctionatorDetail(name)
+  if type(name) ~= "string" then return false end
+  if name:match("^Auctionator.*Sell") then return true end
+  if name:match("^Auctionator.*SaleItem") then return true end
+  if name:match("^Auctionator.*Buy") then return true end
+  return false
+end
+
+function FF.Adapter.ShouldSuppressTooltip(tooltip)
+  if not tooltip or not tooltip.GetOwner then return false end
+  local owner = tooltip:GetOwner()
+  if not owner then return false end
+
+  local ah = AuctionHouseFrame
+  local blizzardDetails = ah and {
+    ah.ItemBuyFrame,
+    ah.CommoditiesBuyFrame,
+    ah.ItemSellFrame,
+    ah.CommoditiesSellFrame,
+  } or {}
+
+  local node = owner
+  while node do
+    for _, target in ipairs(blizzardDetails) do
+      if target and node == target and target.IsShown and target:IsShown() then
+        return true
+      end
+    end
+    if node.GetName then
+      local name = node:GetName()
+      if NameMatchesAuctionatorDetail(name)
+          and node.IsShown and node:IsShown() then
+        return true
+      end
+    end
+    node = node.GetParent and node:GetParent() or nil
+  end
+  return false
+end
+
+function FF.Adapter.RegisterTooltipHook(handler)
+  if FF.Adapter._tooltipHooked then return end
+  if type(handler) ~= "function" then return end
+  if not (TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall
+      and Enum and Enum.TooltipDataType and Enum.TooltipDataType.Item) then
+    return
+  end
+  FF.Adapter._tooltipHooked = true
+
+  TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip, data)
+    local link = data and data.hyperlink
+    if (not link or link == "") and data and data.id and C_Item and C_Item.GetItemInfo then
+      link = select(2, C_Item.GetItemInfo(data.id))
+    end
+    if (not link or link == "") and TooltipUtil and TooltipUtil.GetDisplayedItem then
+      local _name, displayedLink = TooltipUtil.GetDisplayedItem(tooltip)
+      link = displayedLink
+    end
+    if not link or link == "" then return end
+    pcall(handler, tooltip, link)
+  end)
 end
 
 function FF.Adapter.GetAnchorButton()
@@ -230,7 +297,7 @@ function FF.Adapter.RegisterEventBus()
   end
   FF.Adapter._busRegistered = true
 
-  Auctionator.EventBus:RegisterSource(FF.Adapter._busReceiver, "FlipperRetailAdapter")
+  Auctionator.EventBus:RegisterSource(FF.Adapter._busReceiver, "AuctionatorPlusRetail")
   Auctionator.EventBus:Register(FF.Adapter._busReceiver, {
     Auctionator.Shopping.Tab.Events.SearchStart,
     Auctionator.Shopping.Tab.Events.SearchEnd,

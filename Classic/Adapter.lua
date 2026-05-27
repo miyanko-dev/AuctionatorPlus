@@ -62,7 +62,7 @@ function FF.Adapter.OpenFlipDetails(flip)
 
   if Auctionator and Auctionator.EventBus and Auctionator.Buying then
     Auctionator.EventBus
-      :RegisterSource(FF.Adapter._busReceiver, "FlipperClassicOpenDetails")
+      :RegisterSource(FF.Adapter._busReceiver, "AuctionatorPlusOpenDetails")
       :Fire(FF.Adapter._busReceiver, Auctionator.Buying.Events.ShowForShopping, result)
       :Fire(FF.Adapter._busReceiver, Auctionator.Shopping.Tab.Events.BuyScreenShown)
       :UnregisterSource(FF.Adapter._busReceiver)
@@ -75,6 +75,59 @@ end
 
 function FF.Adapter.GetAuctionHouseFrame()
   return AuctionFrame
+end
+
+function FF.Adapter.IsAuctionHouseVisible()
+  return AuctionFrame ~= nil and AuctionFrame:IsShown()
+end
+
+local function NameMatchesAuctionatorDetail(name)
+  if type(name) ~= "string" then return false end
+  if name:match("^Auctionator.*Sell") then return true end
+  if name:match("^Auctionator.*SaleItem") then return true end
+  if name:match("^Auctionator.*Buy") then return true end
+  return false
+end
+
+function FF.Adapter.ShouldSuppressTooltip(tooltip)
+  if not tooltip or not tooltip.GetOwner then return false end
+  local owner = tooltip:GetOwner()
+  if not owner then return false end
+
+  local node = owner
+  while node do
+    local name = node.GetName and node:GetName()
+    if name == "AuctionFrameAuctions"
+        and node.IsShown and node:IsShown() then
+      return true
+    end
+    if NameMatchesAuctionatorDetail(name)
+        and node.IsShown and node:IsShown() then
+      return true
+    end
+    node = node.GetParent and node:GetParent() or nil
+  end
+  return false
+end
+
+function FF.Adapter.RegisterTooltipHook(handler)
+  if FF.Adapter._tooltipHooked then return end
+  if type(handler) ~= "function" then return end
+
+  local function dispatch(tooltip)
+    if not tooltip or not tooltip.GetItem then return end
+    local _, link = tooltip:GetItem()
+    if not link or link == "" then return end
+    pcall(handler, tooltip, link)
+  end
+
+  if GameTooltip and GameTooltip.HookScript then
+    GameTooltip:HookScript("OnTooltipSetItem", dispatch)
+  end
+  if ItemRefTooltip and ItemRefTooltip.HookScript then
+    ItemRefTooltip:HookScript("OnTooltipSetItem", dispatch)
+  end
+  FF.Adapter._tooltipHooked = true
 end
 
 function FF.Adapter.GetAnchorButton()
@@ -126,7 +179,7 @@ function FF.Adapter.RegisterEventBus()
   end
   FF.Adapter._busRegistered = true
 
-  Auctionator.EventBus:RegisterSource(FF.Adapter._busReceiver, "FlipperClassicAdapter")
+  Auctionator.EventBus:RegisterSource(FF.Adapter._busReceiver, "AuctionatorPlusClassic")
   Auctionator.EventBus:Register(FF.Adapter._busReceiver, {
     Auctionator.Shopping.Tab.Events.SearchStart,
     Auctionator.Shopping.Tab.Events.SearchEnd,

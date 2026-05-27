@@ -16,3 +16,8 @@ FF.committedMaxQtyPct = 0
 FF.committedMinDepth = 0
 FF.committedMaxInvest = 0
 FF.committedMinROI = 0.20
+
+FF.statMatches = {}
+FF.statPanel = nil
+FF.statToggleButton = nil
+FF.statQuery = ""

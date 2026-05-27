@@ -19,4 +19,19 @@ FF.Constants = {
     ROI    = 85,
     Gap    = 8,
   },
+
+  Tooltip = {
+    CallerID        = "AuctionatorPlus",
+    AverageLabel    = "Average Min. Buyout",
+    TrendLabel      = "Trend",
+    HighestDayLabel = "Highest Day",
+    LowestDayLabel  = "Lowest Day",
+  },
+
+  StatPanel = {
+    Width            = 540,
+    Height           = 540,
+    RowHeight        = 24,
+    InputMaxLetters  = 120,
+  },
 }
