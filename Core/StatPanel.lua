@@ -1,6 +1,7 @@
 FF.StatPanel = {}
 
 local SP = FF.Constants.StatPanel
+local COL = SP.Columns
 
 local PAD_X = 16
 local PAD_TOP = 52
@@ -17,6 +18,8 @@ local INPUT_HELPER_H = 28
 local INPUT_HELPER_GAP = 6
 local INPUT_LABEL_H = 14
 local INPUT_LABEL_GAP = 2
+local HEADER_ROW_H = 24
+local HEADER_BOTTOM_GAP = 6
 local SCROLLBAR_W = 16
 
 local PANEL_BACKDROP = {
@@ -35,6 +38,13 @@ local SECTION_BACKDROP = {
   tileSize = 16,
   edgeSize = 16,
   insets   = { left = 3, right = 3, top = 5, bottom = 3 },
+}
+
+local HEADER_COLS = {
+  { key = "itemName", label = "Item Name",      width = COL.Item,   defaultDir = "asc"  },
+  { key = "buyout",   label = "Buyout",         width = COL.Buyout, defaultDir = "asc"  },
+  { key = "avg",      label = "Avg Buyout",     width = COL.Avg,    defaultDir = "asc"  },
+  { key = "trend",    label = "Trend",          width = COL.Trend,  defaultDir = "desc" },
 }
 
 local function buildTitleHeader(parent, text)
@@ -88,6 +98,15 @@ local function buildSection(parent, labelText)
   return section
 end
 
+local function MakeCellField(row, width, x, justify)
+  local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  fs:SetPoint("LEFT", row, "LEFT", x, 0)
+  fs:SetWidth(width)
+  fs:SetJustifyH(justify or "LEFT")
+  fs:SetWordWrap(false)
+  return fs
+end
+
 local function InitRowWidgets(row)
   if row.initialized then return end
   row.initialized = true
@@ -98,11 +117,11 @@ local function InitRowWidgets(row)
   highlight:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
   highlight:SetBlendMode("ADD")
 
-  row.ItemText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.ItemText:SetPoint("LEFT", row, "LEFT", 4, 0)
-  row.ItemText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-  row.ItemText:SetJustifyH("LEFT")
-  row.ItemText:SetWordWrap(false)
+  local x = 0
+  row.ItemText = MakeCellField(row, COL.Item, x, "LEFT"); x = x + COL.Item + COL.Gap
+  row.Buyout   = MakeCellField(row, COL.Buyout, x, "LEFT"); x = x + COL.Buyout + COL.Gap
+  row.Avg      = MakeCellField(row, COL.Avg, x, "LEFT");    x = x + COL.Avg + COL.Gap
+  row.Trend    = MakeCellField(row, COL.Trend, x, "LEFT")
 
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   row:SetScript("OnEnter", function(self)
@@ -131,10 +150,36 @@ local function InitRowWidgets(row)
   end)
 end
 
+local function FormatTrendText(trend)
+  if not trend then return "-" end
+  local pct = math.floor(trend + 0.5)
+  if pct == 0 then return "0%" end
+  return string.format("%+d%%", pct)
+end
+
 local function UpdateRow(row, match)
   row.match = match
-  local label = match.itemLink or "?"
-  row.ItemText:SetText(FF.Format.CleanItemText(label))
+  row.ItemText:SetText(FF.Format.CleanItemText(match.itemLink or "?"))
+  row.Buyout:SetText(match.buyout and FF.Format.Money(match.buyout) or "-")
+  row.Avg:SetText(match.avg and FF.Format.Money(match.avg) or "-")
+  row.Trend:SetText(FormatTrendText(match.trend))
+end
+
+local function SortMatches(matches)
+  local prop = FF.statSortProperty or "itemName"
+  local asc = (FF.statSortDirection or "asc") == "asc"
+  table.sort(matches, function(a, b)
+    local av, bv
+    if prop == "itemName" then
+      av = FF.Format.StripItemColor(a.itemLink or "")
+      bv = FF.Format.StripItemColor(b.itemLink or "")
+    else
+      av = a[prop] or 0
+      bv = b[prop] or 0
+    end
+    if asc then return av < bv end
+    return av > bv
+  end)
 end
 
 local function GetAHFrame()
@@ -237,8 +282,61 @@ function FF.StatPanel.Create()
 
   local tableBody = panel.TableSection.body
 
+  panel.HeaderRow = CreateFrame("Frame", nil, tableBody)
+  panel.HeaderRow:SetHeight(HEADER_ROW_H)
+  panel.HeaderRow:SetPoint("TOPLEFT", tableBody, "TOPLEFT", SECTION_BODY_INSET, 0)
+  panel.HeaderRow:SetPoint("TOPRIGHT", tableBody, "TOPRIGHT", -SECTION_BODY_INSET, 0)
+
+  panel.HeaderButtons = {}
+
+  local function CreateSortHeader(def, x)
+    local btn = CreateFrame("Button", nil, panel.HeaderRow)
+    btn:SetPoint("LEFT", panel.HeaderRow, "LEFT", x, 0)
+    btn:SetSize(def.width, HEADER_ROW_H)
+    btn:RegisterForClicks("LeftButtonUp")
+
+    btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btn.Text:SetPoint("LEFT", btn, "LEFT", 0, 0)
+    btn.Text:SetJustifyH("LEFT")
+    btn.Text:SetText(def.label)
+
+    btn.Arrow = btn:CreateTexture(nil, "OVERLAY")
+    btn.Arrow:SetTexture("Interface\\Buttons\\UI-SortArrow")
+    btn.Arrow:SetSize(9, 8)
+    btn.Arrow:SetPoint("LEFT", btn.Text, "RIGHT", 3, 0)
+    btn.Arrow:Hide()
+
+    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetAllPoints(btn)
+    hl:SetTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight")
+    hl:SetBlendMode("ADD")
+    hl:SetAlpha(0.5)
+
+    btn:SetScript("OnClick", function()
+      if FF.statSortProperty == def.key then
+        FF.statSortDirection = (FF.statSortDirection == "asc") and "desc" or "asc"
+      else
+        FF.statSortProperty = def.key
+        FF.statSortDirection = def.defaultDir
+      end
+      if FF.statPanel then
+        FF.statPanel:RefreshSortIndicators()
+        FF.statPanel:Render()
+      end
+    end)
+
+    btn.sortKey = def.key
+    return btn
+  end
+
+  local headerX = 0
+  for _, def in ipairs(HEADER_COLS) do
+    table.insert(panel.HeaderButtons, CreateSortHeader(def, headerX))
+    headerX = headerX + def.width + COL.Gap
+  end
+
   panel.Scroll = CreateFrame("ScrollFrame", "FlipperStatScroll", tableBody)
-  panel.Scroll:SetPoint("TOPLEFT", tableBody, "TOPLEFT", SECTION_BODY_INSET, 0)
+  panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -HEADER_BOTTOM_GAP)
   panel.Scroll:SetPoint("BOTTOMRIGHT", tableBody, "BOTTOMRIGHT", -SECTION_BODY_INSET - SCROLLBAR_W, 0)
   panel.Scroll:EnableMouseWheel(true)
 
@@ -274,31 +372,28 @@ function FF.StatPanel.Create()
   panel.EmptyMessage:SetTextColor(0.55, 0.55, 0.55, 1)
   panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then enter stats above and click Find Matches.")
 
-  panel.StatusCenter = tableBody:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  panel.StatusCenter:SetPoint("TOPLEFT", panel.Scroll, "TOPLEFT", 0, 0)
-  panel.StatusCenter:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", 0, 0)
-  panel.StatusCenter:SetJustifyH("CENTER")
-  panel.StatusCenter:SetJustifyV("MIDDLE")
-  panel.StatusCenter:SetWordWrap(false)
-  panel.StatusCenter:SetTextColor(1, 0.82, 0, 1)
-  panel.StatusCenter:Hide()
+  panel.NoticeText = tableBody:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+  panel.NoticeText:SetPoint("TOPLEFT", panel.Scroll, "TOPLEFT", 0, 0)
+  panel.NoticeText:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", 0, 0)
+  panel.NoticeText:SetJustifyH("CENTER")
+  panel.NoticeText:SetJustifyV("MIDDLE")
+  panel.NoticeText:SetWordWrap(true)
+  panel.NoticeText:SetTextColor(1, 0.82, 0, 1)
+  panel.NoticeText:Hide()
 
-  panel.StatusFadeOut = CreateFrame("Frame", nil, panel)
-  panel.StatusFadeOut:Hide()
-  panel.StatusFadeOut:SetScript("OnUpdate", function(self, delta)
-    self.elapsed = (self.elapsed or 0) + delta
-    local t = self.elapsed
-    if t < 1.5 then
-      panel.StatusCenter:SetAlpha(1)
-    elseif t < 1.8 then
-      panel.StatusCenter:SetAlpha(1 - (t - 1.5) / 0.3)
-    else
-      panel.StatusCenter:SetAlpha(1)
-      panel.StatusCenter:Hide()
-      self:Hide()
-      if FF.statPanel then FF.statPanel:Render() end
+  function panel:ShowNotice(text)
+    if not text or text == "" then
+      self.NoticeText:Hide()
+      return
     end
-  end)
+    self.NoticeText:SetText(text)
+    self.NoticeText:Show()
+    self.EmptyMessage:Hide()
+  end
+
+  function panel:ClearNotice()
+    self.NoticeText:Hide()
+  end
 
   function panel:SetRunningUI(active)
     if active then
@@ -308,54 +403,31 @@ function FF.StatPanel.Create()
     end
   end
 
-  function panel:ClearStatus()
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Hide()
-  end
-
-  function panel:SetStatus(text)
-    if not text or text == "" then
-      self:ClearStatus()
-      return
+  function panel:RefreshSortIndicators()
+    for _, btn in ipairs(self.HeaderButtons) do
+      if FF.statSortProperty == btn.sortKey then
+        btn.Arrow:Show()
+        if FF.statSortDirection == "asc" then
+          btn.Arrow:SetTexCoord(0, 0.5625, 0, 1)
+        else
+          btn.Arrow:SetTexCoord(0.5625, 1, 0, 1)
+        end
+        btn.Text:SetTextColor(1, 0.82, 0, 1)
+      else
+        btn.Arrow:Hide()
+        btn.Text:SetTextColor(0.85, 0.85, 0.85, 1)
+      end
     end
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(text)
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-    self.StatusFadeOut.elapsed = 0
-    self.StatusFadeOut:Show()
-  end
-
-  function panel:StartProgress(total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: 0/%d", total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-  end
-
-  function panel:UpdateProgress(scanned, total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: %d/%d", scanned, total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-  end
-
-  function panel:CompleteProgress(scanned, total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: %d/%d  Complete", scanned, total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-    self.StatusFadeOut.elapsed = 0
-    self.StatusFadeOut:Show()
   end
 
   function panel:Render()
+    self:RefreshSortIndicators()
     local matches = FF.statMatches or {}
-    local hasResults = #matches > 0
-    local statusVisible = self.StatusCenter:IsShown()
+    SortMatches(matches)
 
-    if hasResults or statusVisible then
+    local noticeVisible = self.NoticeText:IsShown()
+
+    if #matches > 0 or noticeVisible then
       self.EmptyMessage:Hide()
     else
       if FF.StatFilter.scannedCount > 0 then

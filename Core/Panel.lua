@@ -87,6 +87,15 @@ local function buildSection(parent, labelText)
   return section
 end
 
+local function MakeCellField(row, width, x)
+  local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+  fs:SetPoint("LEFT", x, 0)
+  fs:SetWidth(width)
+  fs:SetJustifyH("LEFT")
+  fs:SetWordWrap(false)
+  return fs
+end
+
 local function InitRowWidgets(row)
   if row.initialized then return end
   row.initialized = true
@@ -103,29 +112,14 @@ local function InitRowWidgets(row)
   row.ItemText:SetJustifyH("LEFT")
   row.ItemText:SetWordWrap(false)
 
-  local relQtyX = COL.Item + COL.Gap
-  row.RelQty = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.RelQty:SetPoint("LEFT", relQtyX, 0)
-  row.RelQty:SetWidth(COL.RelQty)
-  row.RelQty:SetJustifyH("LEFT")
-
-  local depthX = relQtyX + COL.RelQty + COL.Gap
-  row.Depth = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.Depth:SetPoint("LEFT", depthX, 0)
-  row.Depth:SetWidth(COL.Depth)
-  row.Depth:SetJustifyH("LEFT")
-
-  local costX = depthX + COL.Depth + COL.Gap
-  row.TotalCost = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.TotalCost:SetPoint("LEFT", costX, 0)
-  row.TotalCost:SetWidth(COL.Cost)
-  row.TotalCost:SetJustifyH("LEFT")
-
-  local roiX = costX + COL.Cost + COL.Gap
-  row.ROI = row:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-  row.ROI:SetPoint("LEFT", roiX, 0)
-  row.ROI:SetWidth(COL.ROI)
-  row.ROI:SetJustifyH("LEFT")
+  local x = COL.Item + COL.Gap
+  row.RelQty      = MakeCellField(row, COL.RelQty,      x); x = x + COL.RelQty      + COL.Gap
+  row.Underpriced = MakeCellField(row, COL.Underpriced, x); x = x + COL.Underpriced + COL.Gap
+  row.Vol         = MakeCellField(row, COL.Vol,         x); x = x + COL.Vol         + COL.Gap
+  row.Sellers     = MakeCellField(row, COL.Sellers,     x); x = x + COL.Sellers     + COL.Gap
+  row.TotalCost   = MakeCellField(row, COL.Cost,        x); x = x + COL.Cost        + COL.Gap
+  row.Profit      = MakeCellField(row, COL.Profit,      x); x = x + COL.Profit      + COL.Gap
+  row.ROI         = MakeCellField(row, COL.ROI,         x)
   row.ROI:SetTextColor(0.3, 1, 0.3)
 
   row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -153,11 +147,13 @@ end
 
 local function UpdateRow(row, flip)
   row.flip = flip
-  local text = flip.itemLink or flip.itemName or "?"
-  row.ItemText:SetText(FF.Format.CleanItemText(text))
+  row.ItemText:SetText(FF.Format.CleanItemText(flip.itemLink or flip.itemName or "?"))
   row.RelQty:SetText(string.format("%.0f%%", flip.relativeQuantity or 0))
-  row.Depth:SetText(string.format("%.0f", flip.sellSideDepth or 0))
+  row.Underpriced:SetText(flip.underpriced and string.format("%+d%%", flip.underpriced) or "-")
+  row.Vol:SetText(flip.volatilityBucket or "-")
+  row.Sellers:SetText(flip.sellers and tostring(flip.sellers) or "-")
   row.TotalCost:SetText(FF.Format.Money(flip.totalCost))
+  row.Profit:SetText(FF.Format.Money(flip.margin))
   row.ROI:SetText(string.format("%.0f%%", (flip.roi or 0) * 100))
 end
 
@@ -205,17 +201,17 @@ function FF.Panel.Create()
   local SECTION_BODY_INSET = 4
 
   local FILTER_DEFS = {
-    { key = "MaxQtyPct", label = "Max. Relative Order Quantity (%)",
-      width = 200, maxLetters = 3,  default = "",
+    { key = "MaxQtyPct", label = "Purchase Share (%)",
+      width = 150, maxLetters = 3,  default = "",
       helper = "Skip flips that buy out more than this share of listed stock." },
-    { key = "MinDepth", label = "Min. Listings Depth (n)",
-      width = 160, maxLetters = 4,  default = "",
-      helper = "Skip flips with fewer listings priced above the gap." },
-    { key = "MaxInvest", label = "Max. Investment (g)",
-      width = 145, maxLetters = 10, default = "",
+    { key = "MaxInvest", label = "Investment (g)",
+      width = 150, maxLetters = 10, default = "",
       helper = "Skip flips costing more than this in gold." },
-    { key = "MinROI", label = "Min. ROI (%)",
-      width = 130, maxLetters = 3,  default = tostring(C.DefaultMinROIPercent),
+    { key = "MinProfit", label = "Profit (g)",
+      width = 150, maxLetters = 10, default = "",
+      helper = "Skip flips whose post-cut, post-deposit profit is below this in gold." },
+    { key = "MinROI", label = "ROI (%)",
+      width = 120, maxLetters = 3,  default = tostring(C.DefaultMinROIPercent),
       helper = "Skip flips below this return on invested gold." },
   }
 
@@ -299,11 +295,14 @@ function FF.Panel.Create()
   panel.HeaderRow:SetPoint("TOPRIGHT", tableBody, "TOPRIGHT", -SECTION_BODY_INSET, 0)
 
   local HEADER_COLS = {
-    { key = "itemName",         label = "Item Name",                   width = COL.Item,   defaultDir = "asc"  },
-    { key = "relativeQuantity", label = "Relative Order Quantity (%)", width = COL.RelQty, defaultDir = "asc"  },
-    { key = "sellSideDepth",    label = "Listings Depth (n)",          width = COL.Depth,  defaultDir = "desc" },
-    { key = "totalCost",        label = "Investment (g)",              width = COL.Cost,   defaultDir = "asc"  },
-    { key = "roi",              label = "ROI (%)",                     width = COL.ROI,    defaultDir = "desc" },
+    { key = "itemName",         label = "Item Name",      width = COL.Item,        defaultDir = "asc"  },
+    { key = "relativeQuantity", label = "Purchase Share", width = COL.RelQty,      defaultDir = "asc"  },
+    { key = "underpriced",      label = "Underpriced",    width = COL.Underpriced, defaultDir = "asc"  },
+    { key = "volatility",       label = "Vol",            width = COL.Vol,         defaultDir = "asc"  },
+    { key = "sellers",          label = "Sellers",        width = COL.Sellers,     defaultDir = "asc"  },
+    { key = "totalCost",        label = "Investment",     width = COL.Cost,        defaultDir = "asc"  },
+    { key = "margin",           label = "Profit",         width = COL.Profit,      defaultDir = "desc" },
+    { key = "roi",              label = "ROI",            width = COL.ROI,         defaultDir = "desc" },
   }
 
   panel.HeaderButtons = {}
@@ -391,80 +390,12 @@ function FF.Panel.Create()
   panel.EmptyMessage:SetTextColor(0.55, 0.55, 0.55, 1)
   panel.EmptyMessage:SetText("Run a shopping list search in Auctionator, then click Find Potential Flips.")
 
-  panel.StatusCenter = tableBody:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  panel.StatusCenter:SetPoint("TOPLEFT", panel.Scroll, "TOPLEFT", 0, 0)
-  panel.StatusCenter:SetPoint("BOTTOMRIGHT", panel.Scroll, "BOTTOMRIGHT", 0, 0)
-  panel.StatusCenter:SetJustifyH("CENTER")
-  panel.StatusCenter:SetJustifyV("MIDDLE")
-  panel.StatusCenter:SetWordWrap(false)
-  panel.StatusCenter:SetTextColor(1, 0.82, 0, 1)
-  panel.StatusCenter:Hide()
-
-  panel.StatusFadeOut = CreateFrame("Frame", nil, panel)
-  panel.StatusFadeOut:Hide()
-  panel.StatusFadeOut:SetScript("OnUpdate", function(self, delta)
-    self.elapsed = (self.elapsed or 0) + delta
-    local t = self.elapsed
-    if t < 1.5 then
-      panel.StatusCenter:SetAlpha(1)
-    elseif t < 1.8 then
-      panel.StatusCenter:SetAlpha(1 - (t - 1.5) / 0.3)
-    else
-      panel.StatusCenter:SetAlpha(1)
-      panel.StatusCenter:Hide()
-      self:Hide()
-      if FF.panel then FF.panel:Render() end
-    end
-  end)
-
   function panel:SetScanningUI(active)
     if active then
       self.ActionButton:SetText("Cancel Scan")
     else
       self.ActionButton:SetText("Find Potential Flips")
     end
-  end
-
-  function panel:ClearStatus()
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Hide()
-  end
-
-  function panel:SetStatus(text)
-    if not text or text == "" then
-      self:ClearStatus()
-      return
-    end
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(text)
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-    self.StatusFadeOut.elapsed = 0
-    self.StatusFadeOut:Show()
-  end
-
-  function panel:StartProgress(total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: 0/%d", total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-  end
-
-  function panel:UpdateProgress(scanned, total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: %d/%d", scanned, total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-  end
-
-  function panel:CompleteProgress(scanned, total)
-    self.StatusFadeOut:Hide()
-    self.StatusCenter:SetText(string.format("Searching: %d/%d  Complete", scanned, total))
-    self.StatusCenter:SetAlpha(1)
-    self.StatusCenter:Show()
-    self.StatusFadeOut.elapsed = 0
-    self.StatusFadeOut:Show()
   end
 
   function panel:RefreshSortIndicators()
@@ -488,10 +419,7 @@ function FF.Panel.Create()
     self:RefreshSortIndicators()
     FF.Filters.SortFlips(FF.flips)
 
-    local hasResults = #FF.flips > 0
-    local statusVisible = self.StatusCenter:IsShown()
-
-    if hasResults or statusVisible then
+    if #FF.flips > 0 then
       self.EmptyMessage:Hide()
     else
       if FF.hasScanned then

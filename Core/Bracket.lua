@@ -58,12 +58,12 @@ function FF.Bracket.FindBest(listings, options)
           for j = 1, k do bracket[j] = listings[j] end
           best = {
             bracket = bracket,
+            bracketEnd = k,
             topPrice = topPrice,
             sellPrice = sellPrice,
             margin = margin,
             totalCost = bracketCost,
             totalQuantity = bracketQty,
-            sellSideDepth = n - k,
             depositCost = depositCost,
             roi = roi,
           }

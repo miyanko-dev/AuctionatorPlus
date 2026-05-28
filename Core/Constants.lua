@@ -7,25 +7,26 @@ FF.Constants = {
   HistoricalMultipleCap = 3,
   ScanTimeoutSeconds = 6,
 
-  PanelWidth = 800,
+  PanelWidth = 950,
   PanelHeight = 540,
   RowHeight = 28,
 
   Columns = {
-    Item   = 200,
-    RelQty = 175,
-    Depth  = 130,
-    Cost   = 115,
-    ROI    = 85,
-    Gap    = 8,
+    Item        = 180,
+    RelQty      = 90,
+    Underpriced = 80,
+    Vol         = 45,
+    Sellers     = 55,
+    Cost        = 95,
+    Profit      = 95,
+    ROI         = 55,
+    Gap         = 8,
   },
 
   Tooltip = {
-    CallerID        = "AuctionatorPlus",
-    AverageLabel    = "Average Min. Buyout",
-    TrendLabel      = "Trend",
-    HighestDayLabel = "Highest Day",
-    LowestDayLabel  = "Lowest Day",
+    CallerID     = "AuctionatorPlus",
+    AverageLabel = "Average Min. Buyout",
+    TrendLabel   = "Trend",
   },
 
   StatPanel = {
@@ -33,5 +34,12 @@ FF.Constants = {
     Height           = 540,
     RowHeight        = 24,
     InputMaxLetters  = 120,
+    Columns = {
+      Item   = 180,
+      Buyout = 90,
+      Avg    = 95,
+      Trend  = 60,
+      Gap    = 8,
+    },
   },
 }

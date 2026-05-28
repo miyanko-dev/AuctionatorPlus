@@ -5,6 +5,8 @@ FF.StatFilter = {
   generation = 0,
 }
 
+local CallerID = "Auctionator Plus"
+
 local aliasCache
 local function BuildAliases()
   local aliases = {}
@@ -63,7 +65,6 @@ function FF.StatFilter.ResetResults()
   FF.StatFilter.totalToScan = 0
   if FF.statPanel then
     FF.statPanel:SetRunningUI(false)
-    FF.statPanel:ClearStatus()
     FF.statPanel:Render()
   end
 end
@@ -72,18 +73,56 @@ function FF.StatFilter.Abort()
   if not FF.StatFilter.running then return end
   FF.StatFilter.running = false
   FF.StatFilter.generation = FF.StatFilter.generation + 1
-  if FF.statPanel then
-    FF.statPanel:SetRunningUI(false)
-    FF.statPanel:SetStatus("Search cancelled")
+  if FF.statPanel then FF.statPanel:SetRunningUI(false) end
+end
+
+local function DBKeyForLink(itemLink)
+  if not (Auctionator and Auctionator.Utilities
+      and Auctionator.Utilities.BasicDBKeyFromLink) then
+    return nil
   end
+  local ok, key = pcall(Auctionator.Utilities.BasicDBKeyFromLink, itemLink)
+  if not ok then return nil end
+  return key
+end
+
+local function CurrentBuyout(itemLink)
+  if not (Auctionator and Auctionator.API and Auctionator.API.v1
+      and Auctionator.API.v1.GetAuctionPriceByItemLink) then
+    return nil
+  end
+  local ok, price = pcall(
+    Auctionator.API.v1.GetAuctionPriceByItemLink,
+    CallerID,
+    itemLink
+  )
+  if not ok then return nil end
+  if type(price) ~= "number" or price <= 0 then return nil end
+  return price
+end
+
+local function BuildMatchMetrics(itemLink)
+  local buyout = CurrentBuyout(itemLink)
+  local dbKey = DBKeyForLink(itemLink)
+  local stats = dbKey and FF.History.Compute(dbKey) or nil
+  local avg = stats and stats.averageMinBuyout or nil
+  local trend
+  if buyout and avg and avg > 0 then
+    trend = (buyout - avg) / avg * 100
+  end
+  return buyout, avg, trend
 end
 
 local function recordMatch(entry, itemLink, itemText, tokens)
   if not FF.StatFilter.Matches(itemText, tokens) then return end
+  local buyout, avg, trend = BuildMatchMetrics(itemLink)
   table.insert(FF.statMatches, {
     entry    = entry,
     itemLink = itemLink,
     itemText = itemText,
+    buyout   = buyout,
+    avg      = avg,
+    trend    = trend,
   })
   if FF.statPanel then FF.statPanel:Render() end
 end
@@ -92,7 +131,7 @@ function FF.StatFilter.Run(query)
   if not FF.StatScan then return end
   local tokens = FF.StatFilter.ParseQuery(query)
   if #tokens == 0 then
-    if FF.statPanel then FF.statPanel:SetStatus("Enter at least one stat term") end
+    if FF.statPanel then FF.statPanel:ShowNotice("Enter at least one stat term") end
     return
   end
 
@@ -105,8 +144,8 @@ function FF.StatFilter.Run(query)
   local gen = FF.StatFilter.generation
 
   if FF.statPanel then
+    FF.statPanel:ClearNotice()
     FF.statPanel:SetRunningUI(true)
-    FF.statPanel:StartProgress(FF.StatFilter.totalToScan)
     FF.statPanel:Render()
   end
 
@@ -114,7 +153,7 @@ function FF.StatFilter.Run(query)
     FF.StatFilter.running = false
     if FF.statPanel then
       FF.statPanel:SetRunningUI(false)
-      FF.statPanel:SetStatus("No Auctionator results to scan. Run a shopping search first.")
+      FF.statPanel:Render()
     end
     return
   end
@@ -126,14 +165,10 @@ function FF.StatFilter.Run(query)
         recordMatch(entry, itemLink, itemText, tokens)
       end
       FF.StatFilter.scannedCount = FF.StatFilter.scannedCount + 1
-      if FF.statPanel then
-        FF.statPanel:UpdateProgress(FF.StatFilter.scannedCount, FF.StatFilter.totalToScan)
-      end
       if FF.StatFilter.scannedCount >= FF.StatFilter.totalToScan then
         FF.StatFilter.running = false
         if FF.statPanel then
           FF.statPanel:SetRunningUI(false)
-          FF.statPanel:CompleteProgress(FF.StatFilter.scannedCount, FF.StatFilter.totalToScan)
           FF.statPanel:Render()
         end
       end

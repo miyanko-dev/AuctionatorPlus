@@ -182,50 +182,6 @@ function FF.Adapter.GetAHFrame()
   return AuctionHouseFrame
 end
 
-function FF.Adapter.IsAHVisible()
-  return AuctionHouseFrame ~= nil and AuctionHouseFrame:IsShown()
-end
-
-local function IsDetailFrame(name)
-  if type(name) ~= "string" then return false end
-  if name:match("^Auctionator.*Sell") then return true end
-  if name:match("^Auctionator.*SaleItem") then return true end
-  if name:match("^Auctionator.*Buy") then return true end
-  return false
-end
-
-function FF.Adapter.ShouldSuppressTooltip(tooltip)
-  if not tooltip or not tooltip.GetOwner then return false end
-  local owner = tooltip:GetOwner()
-  if not owner then return false end
-
-  local ah = AuctionHouseFrame
-  local blizzardDetails = ah and {
-    ah.ItemBuyFrame,
-    ah.CommoditiesBuyFrame,
-    ah.ItemSellFrame,
-    ah.CommoditiesSellFrame,
-  } or {}
-
-  local node = owner
-  while node do
-    for _, target in ipairs(blizzardDetails) do
-      if target and node == target and target.IsShown and target:IsShown() then
-        return true
-      end
-    end
-    if node.GetName then
-      local name = node:GetName()
-      if IsDetailFrame(name)
-          and node.IsShown and node:IsShown() then
-        return true
-      end
-    end
-    node = node.GetParent and node:GetParent() or nil
-  end
-  return false
-end
-
 function FF.Adapter.RegisterTooltipHook(apply)
   if FF.Adapter._tooltipHooked then return end
   if type(apply) ~= "function" then return end
@@ -247,10 +203,6 @@ function FF.Adapter.RegisterTooltipHook(apply)
     if not link or link == "" then return end
     pcall(apply, tooltip, link)
   end)
-end
-
-function FF.Adapter.GetAnchorButton()
-  return AuctionatorShoppingFrame and AuctionatorShoppingFrame.ExportCSV or nil
 end
 
 function FF.Adapter.CreateDropdown(parent, width, options, getKey, setKey)

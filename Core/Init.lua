@@ -13,11 +13,16 @@ FF.sortProperty = "roi"
 FF.sortDirection = "desc"
 
 FF.committedMaxQtyPct = 0
-FF.committedMinDepth = 0
 FF.committedMaxInvest = 0
+FF.committedMinProfit = 0
 FF.committedMinROI = 0.20
 
 FF.statMatches = {}
 FF.statPanel = nil
 FF.statToggleButton = nil
 FF.statQuery = ""
+
+FF.fullScanButton = nil
+
+FF.statSortProperty = "itemName"
+FF.statSortDirection = "asc"

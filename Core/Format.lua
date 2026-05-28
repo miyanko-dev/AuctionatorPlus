@@ -35,15 +35,6 @@ function FF.Format.Money(copper)
   return string.format("%ds", s)
 end
 
-function FF.Format.WeekdayName(wday)
-  if not wday then return nil end
-  if CALENDAR_WEEKDAY_NAMES and CALENDAR_WEEKDAY_NAMES[wday] then
-    return CALENDAR_WEEKDAY_NAMES[wday]
-  end
-  local fallback = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" }
-  return fallback[wday]
-end
-
 function FF.Format.SanitizeSearchTerm(text)
   if type(text) ~= "string" then return nil end
   text = text:gsub("|c[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]", "")

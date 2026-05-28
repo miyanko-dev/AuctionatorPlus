@@ -5,6 +5,7 @@ local AHCut = C.AHCutPercent / 100
 local Undercut = C.DefaultUndercutPercent / 100
 local DepositRate = C.DepositPercent / 100
 local HistoricalCap = C.HistoricalMultipleCap
+local CallerID = "Auctionator Plus"
 
 function FF.Filters.Commit()
   local panel = FF.panel
@@ -13,11 +14,11 @@ function FF.Filters.Commit()
   local qtyPct = tonumber(panel.inputs.MaxQtyPct:GetText())
   FF.committedMaxQtyPct = (qtyPct and qtyPct > 0) and qtyPct or 0
 
-  local depth = tonumber(panel.inputs.MinDepth:GetText())
-  FF.committedMinDepth = (depth and depth > 0) and depth or 0
-
   local gold = tonumber(panel.inputs.MaxInvest:GetText())
   FF.committedMaxInvest = (gold and gold > 0) and (gold * 10000) or 0
+
+  local profit = tonumber(panel.inputs.MinProfit:GetText())
+  FF.committedMinProfit = (profit and profit > 0) and (profit * 10000) or 0
 
   local roi = tonumber(panel.inputs.MinROI:GetText())
   FF.committedMinROI = (roi and roi > 0) and (roi / 100) or 0
@@ -34,9 +35,57 @@ local function GetHistoricalPrice(itemLink)
   if not Auctionator or not Auctionator.API or not Auctionator.API.v1 then return nil end
   local fetch = Auctionator.API.v1.GetAuctionPriceByItemLink
   if not fetch then return nil end
-  local ok, price = pcall(fetch, "Auctionator Plus", itemLink)
+  local ok, price = pcall(fetch, CallerID, itemLink)
   if ok and type(price) == "number" and price > 0 then return price end
   return nil
+end
+
+local function GetAuctionAge(itemLink)
+  if not itemLink then return nil end
+  if not Auctionator or not Auctionator.API or not Auctionator.API.v1 then return nil end
+  local fetch = Auctionator.API.v1.GetAuctionAgeByItemLink
+  if not fetch then return nil end
+  local ok, age = pcall(fetch, CallerID, itemLink)
+  if ok and type(age) == "number" and age >= 0 then return age end
+  return nil
+end
+
+local function RepostMultiplier(ageDays)
+  if not ageDays then return 1 end
+  if ageDays <= 1 then return 1 end
+  if ageDays <= 3 then return 1.5 end
+  if ageDays <= 7 then return 2 end
+  return 3
+end
+
+local function DBKeyForLink(itemLink)
+  if not itemLink then return nil end
+  if not (Auctionator and Auctionator.Utilities
+      and Auctionator.Utilities.BasicDBKeyFromLink) then
+    return nil
+  end
+  local ok, key = pcall(Auctionator.Utilities.BasicDBKeyFromLink, itemLink)
+  if not ok then return nil end
+  return key
+end
+
+local function CountSellers(listings, fromIndex)
+  if fromIndex > #listings then return nil end
+  local owners = {}
+  local count = 0
+  local hasAnyOwner = false
+  for i = fromIndex, #listings do
+    local owner = listings[i].owner
+    if owner and owner ~= "" then
+      hasAnyOwner = true
+      if not owners[owner] then
+        owners[owner] = true
+        count = count + 1
+      end
+    end
+  end
+  if not hasAnyOwner then return nil end
+  return count
 end
 
 function FF.Filters.BuildFlip(scannedRecord)
@@ -53,7 +102,10 @@ function FF.Filters.BuildFlip(scannedRecord)
 
   local isCommodity = scannedRecord.isCommodity == true
   local vendorPrice = GetVendorPrice(itemLink)
-  local depositPerUnit = isCommodity and 0 or (vendorPrice * DepositRate)
+  local baseDeposit = isCommodity and 0 or (vendorPrice * DepositRate)
+  local auctionAge = GetAuctionAge(itemLink)
+  local repostMult = RepostMultiplier(auctionAge)
+  local depositPerUnit = baseDeposit * repostMult
   local historicalPrice = GetHistoricalPrice(itemLink)
 
   local best = FF.Bracket.FindBest(listings, {
@@ -67,12 +119,23 @@ function FF.Filters.BuildFlip(scannedRecord)
   if not best then return nil end
 
   if best.roi < FF.committedMinROI then return nil end
-  if FF.committedMinDepth > 0 and best.sellSideDepth < FF.committedMinDepth then return nil end
   if FF.committedMaxInvest > 0 and best.totalCost > FF.committedMaxInvest then return nil end
+  if FF.committedMinProfit > 0 and best.margin < FF.committedMinProfit then return nil end
 
   local displayQuantity = (entry and entry.totalQuantity) or 0
   local relativeQuantity = (displayQuantity > 0) and (best.totalQuantity / displayQuantity * 100) or 0
   if FF.committedMaxQtyPct > 0 and relativeQuantity > FF.committedMaxQtyPct then return nil end
+
+  local stats = DBKeyForLink(itemLink)
+  stats = stats and FF.History.Compute(stats) or nil
+
+  local underpriced
+  if stats and stats.averageMinBuyout and stats.averageMinBuyout > 0 then
+    local currentMin = listings[1] and listings[1].unitPrice
+    if currentMin then
+      underpriced = (currentMin - stats.averageMinBuyout) / stats.averageMinBuyout * 100
+    end
+  end
 
   return {
     entry = entry,
@@ -86,10 +149,15 @@ function FF.Filters.BuildFlip(scannedRecord)
     totalQuantity = best.totalQuantity,
     displayQuantity = displayQuantity,
     relativeQuantity = relativeQuantity,
-    sellSideDepth = best.sellSideDepth,
     depositCost = best.depositCost,
     roi = best.roi,
     isCommodity = isCommodity,
+    auctionAge = auctionAge,
+    repostMultiplier = repostMult,
+    underpriced = underpriced,
+    volatility = stats and stats.volatility,
+    volatilityBucket = stats and stats.volatilityBucket,
+    sellers = CountSellers(listings, best.bracketEnd + 1),
   }
 end
 

@@ -22,6 +22,7 @@ local function CollectListings(result)
           unitPrice = buyout / quantity,
           cost = buyout,
           quantity = quantity,
+          owner = owner,
         })
       end
     end
@@ -63,52 +64,26 @@ function FF.Adapter.OpenFlipDetails(flip)
       :Fire(FF.Adapter._busReceiver, Auctionator.Shopping.Tab.Events.BuyScreenShown)
       :UnregisterSource(FF.Adapter._busReceiver)
   end
-
-  if FF.panel and FF.panel:IsShown() then
-    FF.panel:Hide()
-  end
 end
 
 function FF.Adapter.GetAHFrame()
   return AuctionFrame
 end
 
-function FF.Adapter.IsAHVisible()
-  return AuctionFrame ~= nil and AuctionFrame:IsShown()
-end
-
-local function IsDetailFrame(name)
-  if type(name) ~= "string" then return false end
-  if name:match("^Auctionator.*Sell") then return true end
-  if name:match("^Auctionator.*SaleItem") then return true end
-  if name:match("^Auctionator.*Buy") then return true end
-  return false
-end
-
-function FF.Adapter.ShouldSuppressTooltip(tooltip)
-  if not tooltip or not tooltip.GetOwner then return false end
-  local owner = tooltip:GetOwner()
-  if not owner then return false end
-
-  local node = owner
-  while node do
-    local name = node.GetName and node:GetName()
-    if name == "AuctionFrameAuctions"
-        and node.IsShown and node:IsShown() then
-      return true
-    end
-    if IsDetailFrame(name)
-        and node.IsShown and node:IsShown() then
-      return true
-    end
-    node = node.GetParent and node:GetParent() or nil
-  end
-  return false
-end
+local TOOLTIP_METHODS = {
+  "SetBagItem", "SetBuybackItem", "SetMerchantItem", "SetInventoryItem",
+  "SetGuildBankItem", "SetLootItem", "SetLootRollItem",
+  "SetQuestItem", "SetQuestLogItem", "SetSendMailItem", "SetInboxItem",
+  "SetTradePlayerItem", "SetTradeTargetItem", "SetAuctionItem",
+  "SetItemByID", "SetHyperlink", "SetTradeSkillItem", "SetCraftItem",
+  "SetItemByGUID", "SetRecipeReagentItem", "SetRecipeResultItem",
+  "SetItemKey",
+}
 
 function FF.Adapter.RegisterTooltipHook(apply)
   if FF.Adapter._tooltipHooked then return end
   if type(apply) ~= "function" then return end
+  FF.Adapter._tooltipHooked = true
 
   local function dispatch(tooltip)
     if not tooltip or not tooltip.GetItem then return end
@@ -117,17 +92,14 @@ function FF.Adapter.RegisterTooltipHook(apply)
     pcall(apply, tooltip, link)
   end
 
-  if GameTooltip and GameTooltip.HookScript then
-    GameTooltip:HookScript("OnTooltipSetItem", dispatch)
+  for _, methodName in ipairs(TOOLTIP_METHODS) do
+    if GameTooltip and GameTooltip[methodName] then
+      hooksecurefunc(GameTooltip, methodName, function(tip) dispatch(tip) end)
+    end
   end
-  if ItemRefTooltip and ItemRefTooltip.HookScript then
-    ItemRefTooltip:HookScript("OnTooltipSetItem", dispatch)
+  if ItemRefTooltip and ItemRefTooltip.SetHyperlink then
+    hooksecurefunc(ItemRefTooltip, "SetHyperlink", function(tip) dispatch(tip) end)
   end
-  FF.Adapter._tooltipHooked = true
-end
-
-function FF.Adapter.GetAnchorButton()
-  return AuctionatorShoppingFrame and AuctionatorShoppingFrame.ExportCSV or nil
 end
 
 function FF.Adapter.CreateDropdown(parent, width, options, getKey, setKey)
@@ -155,8 +127,6 @@ local function ReceiveEvent(_, eventName, eventData)
   elseif eventName == Auctionator.Shopping.Tab.Events.SearchEnd then
     StoreResults(eventData)
     FF.Scanner.CollectEntries(eventData)
-  elseif eventName == Auctionator.Shopping.Tab.Events.BuyScreenShown then
-    if FF.panel and FF.panel:IsShown() then FF.panel:Hide() end
   end
 end
 
@@ -175,6 +145,5 @@ function FF.Adapter.RegisterEventBus()
     Auctionator.Shopping.Tab.Events.SearchStart,
     Auctionator.Shopping.Tab.Events.SearchEnd,
     Auctionator.Shopping.Tab.Events.SearchIncrementalUpdate,
-    Auctionator.Shopping.Tab.Events.BuyScreenShown,
   })
 end

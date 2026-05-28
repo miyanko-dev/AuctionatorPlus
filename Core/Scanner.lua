@@ -13,7 +13,6 @@ function FF.Scanner.ResetCollected()
   FF.Scanner.scanning = false
   if FF.panel then
     FF.panel:SetScanningUI(false)
-    FF.panel:ClearStatus()
     FF.panel:Render()
   end
   if FF.StatFilter and FF.StatFilter.Abort then FF.StatFilter.Abort() end
@@ -36,16 +35,8 @@ end
 function FF.Scanner.Abort()
   if not FF.Adapter then return end
   if FF.Adapter.AbortScan then FF.Adapter.AbortScan() end
-  local wasScanning = FF.Scanner.scanning
   FF.Scanner.scanning = false
-  if FF.panel then
-    FF.panel:SetScanningUI(false)
-    if wasScanning then
-      FF.panel:SetStatus("Scan cancelled")
-    else
-      FF.panel:ClearStatus()
-    end
-  end
+  if FF.panel then FF.panel:SetScanningUI(false) end
 end
 
 local function onListingsReady(entry, listings, isCommodity)
@@ -63,9 +54,6 @@ local function onListingsReady(entry, listings, isCommodity)
   end
 
   FF.Scanner.scannedCount = FF.Scanner.scannedCount + 1
-  if FF.panel then
-    FF.panel:UpdateProgress(FF.Scanner.scannedCount, FF.Scanner.totalToScan)
-  end
 end
 
 local function onComplete()
@@ -73,7 +61,6 @@ local function onComplete()
   FF.hasScanned = true
   if FF.panel then
     FF.panel:SetScanningUI(false)
-    FF.panel:CompleteProgress(FF.Scanner.scannedCount, FF.Scanner.totalToScan)
     FF.panel:Render()
   end
 end
@@ -91,7 +78,6 @@ function FF.Scanner.Start()
   if FF.Scanner.totalToScan == 0 then
     if FF.panel then
       FF.panel:SetScanningUI(false)
-      FF.panel:ClearStatus()
       FF.panel:Render()
     end
     return
@@ -100,7 +86,6 @@ function FF.Scanner.Start()
   FF.Scanner.scanning = true
   if FF.panel then
     FF.panel:SetScanningUI(true)
-    FF.panel:StartProgress(FF.Scanner.totalToScan)
     FF.panel:Render()
   end
 
