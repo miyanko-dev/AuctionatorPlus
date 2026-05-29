@@ -1,27 +1,22 @@
-local BUTTON_GAP = 4
+local BUTTON_GAP = 2
 
-local function GetShoppingAnchor()
-  local shoppingFrame = _G.AuctionatorShoppingFrame
-  if not shoppingFrame then return nil, nil end
-  return shoppingFrame, shoppingFrame.ExportCSV
-end
-
-local function CreateToggleButton()
+local function CreateFlipButton()
   if FF.toggleButton then return true end
 
-  local shoppingFrame, exportButton = GetShoppingAnchor()
-  if not shoppingFrame or not exportButton then return false end
+  local shoppingFrame = _G.AuctionatorShoppingFrame
+  local fullScanButton = FF.fullScanShoppingButton
+  if not shoppingFrame or not fullScanButton then return false end
 
   local button = CreateFrame("Button", "FlipperScanButton", shoppingFrame, "UIPanelButtonTemplate")
   button:SetSize(150, 22)
-  button:SetText("Flip Finder")
-  button:SetPoint("RIGHT", exportButton, "LEFT", -BUTTON_GAP, 0)
+  button:SetText("Arbitrage")
+  button:SetPoint("LEFT", fullScanButton, "RIGHT", BUTTON_GAP, 0)
   button:SetFrameStrata(shoppingFrame:GetFrameStrata())
   button:SetFrameLevel(shoppingFrame:GetFrameLevel() + 5)
   button:SetScript("OnClick", FF.Panel.Toggle)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Flip Finder panel")
+    GameTooltip:SetText("Toggle Arbitrage panel")
     GameTooltip:AddLine(
       "Surfaces items whose lowest auctions span a price gap above the configured margin.",
       1, 1, 1, true)
@@ -40,14 +35,14 @@ local function CreateStatButton()
 
   local button = CreateFrame("Button", "FlipperStatButton", FF.toggleButton:GetParent(), "UIPanelButtonTemplate")
   button:SetSize(120, 22)
-  button:SetText("Stat Finder")
-  button:SetPoint("BOTTOMRIGHT", FF.toggleButton, "BOTTOMLEFT", -BUTTON_GAP, 0)
+  button:SetText("Stats Filter")
+  button:SetPoint("LEFT", FF.toggleButton, "RIGHT", BUTTON_GAP, 0)
   button:SetFrameStrata(FF.toggleButton:GetFrameStrata())
   button:SetFrameLevel(FF.toggleButton:GetFrameLevel())
   button:SetScript("OnClick", FF.StatPanel.Toggle)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Stat Finder panel")
+    GameTooltip:SetText("Toggle Stats Filter panel")
     GameTooltip:AddLine(
       "Finds items in Auctionator shopping results by item stats. Enter comma-separated terms like agility, stamina, dps.",
       1, 1, 1, true)
@@ -66,6 +61,9 @@ local function SetFinderButtonsShown(shown)
   end
   if FF.statToggleButton then
     if shown then FF.statToggleButton:Show() else FF.statToggleButton:Hide() end
+  end
+  if FF.fullScanShoppingButton then
+    if shown then FF.fullScanShoppingButton:Show() else FF.fullScanShoppingButton:Hide() end
   end
 end
 
@@ -97,11 +95,11 @@ end
 
 local function EnsureToggleButton(attempt)
   attempt = attempt or 1
-  local flipReady = CreateToggleButton()
+  local fullScanReady = FF.FullScanButton and FF.FullScanButton.Ensure()
+  local flipReady = fullScanReady and CreateFlipButton()
   local statReady = flipReady and CreateStatButton()
   local buyHooked = statReady and HookBuyFrameVisibility()
-  local fullScanReady = FF.FullScanButton and FF.FullScanButton.Ensure()
-  if (flipReady and statReady and buyHooked and fullScanReady) or attempt > 20 then return end
+  if (fullScanReady and flipReady and statReady and buyHooked) or attempt > 20 then return end
   C_Timer.After(0.5, function() EnsureToggleButton(attempt + 1) end)
 end
 

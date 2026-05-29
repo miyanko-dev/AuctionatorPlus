@@ -181,7 +181,7 @@ function FF.Panel.Create()
   panel:Hide()
 
   applyPanelBackdrop(panel)
-  buildTitleHeader(panel, "Flip Finder")
+  buildTitleHeader(panel, "Arbitrage")
 
   local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)

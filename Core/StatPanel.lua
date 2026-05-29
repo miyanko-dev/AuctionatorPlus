@@ -206,7 +206,7 @@ function FF.StatPanel.Create()
   panel:Hide()
 
   if panel.SetBackdrop then panel:SetBackdrop(PANEL_BACKDROP) end
-  buildTitleHeader(panel, "Stat Finder")
+  buildTitleHeader(panel, "Stats Filter")
 
   local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
   closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)

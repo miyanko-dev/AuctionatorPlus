@@ -1,84 +1,169 @@
 FF.FullScanButton = {}
 
 local BUTTON_LABEL = "Full Scan"
-local COMPLETE_LABEL = "Scan Complete"
-local CANCELLED_LABEL = "Scan Cancelled"
-local FLASH_DURATION = 2
-local HORIZONTAL_PADDING = 14
-local CLOSE_BUTTON_GAP = -120
-local STATUS_GAP = 6
-local MIN_BUTTON_WIDTH = 96
+local BUTTON_WIDTH = 110
 local BUTTON_HEIGHT = 22
+local BUTTON_GAP = 2
+local FINAL_HOLD_SECONDS = 2
+local FADE_DURATION = 0.2
 
 local COLOR_WHITE = { 1, 1, 1 }
 local COLOR_GREEN = { 0.1, 1, 0.1 }
 local COLOR_RED = { 1, 0.2, 0.2 }
 
-local function ApplyButtonWidth(button)
-  local fs = button:GetFontString()
-  local width = (fs and fs:GetStringWidth()) or 0
-  button:SetWidth(math.max(MIN_BUTTON_WIDTH, math.ceil(width + HORIZONTAL_PADDING * 2)))
-end
+local progressTooltip
+local hideTimer
+local scanActive = false
+local lastText, lastColor
+local tooltipShown = false
+local fadeDriver = CreateFrame("Frame")
 
-local function SetStatus(button, text, color)
-  local label = button._statusLabel
-  if not label then return end
-  if button._statusTimer then
-    button._statusTimer:Cancel()
-    button._statusTimer = nil
-  end
-  if not text or text == "" then
-    label:SetText("")
-    label:Hide()
-    return
-  end
-  label:SetTextColor(color[1], color[2], color[3])
-  label:SetText(text)
-  label:Show()
-end
-
-local function FlashStatus(button, text, color)
-  SetStatus(button, text, color)
-  button._statusTimer = C_Timer.NewTimer(FLASH_DURATION, function()
-    button._statusTimer = nil
-    SetStatus(button, nil)
-  end)
-end
-
-local function FullScanReady()
+local function ScanReady()
   return Auctionator and Auctionator.State and Auctionator.State.FullScanFrameRef ~= nil
 end
 
-local function OnClick(self)
-  if not FullScanReady() then return end
+local function OnClick()
+  if not ScanReady() then return end
   Auctionator.State.FullScanFrameRef:InitiateScan()
 end
 
-local function ReceiveEvent(self, eventName, eventData)
+local function ActiveButton()
+  local shop = FF.fullScanShoppingButton
+  local sell = FF.fullScanSellingButton
+  if shop and shop:IsVisible() then return shop end
+  if sell and sell:IsVisible() then return sell end
+  return nil
+end
+
+local function EnsureProgressTooltip()
+  if progressTooltip then return progressTooltip end
+  progressTooltip = CreateFrame(
+    "GameTooltip", "AuctionatorPlusScanProgressTooltip", UIParent, "GameTooltipTemplate")
+  return progressTooltip
+end
+
+local function StopFade()
+  fadeDriver:SetScript("OnUpdate", nil)
+end
+
+local function StartFade(tt, fromAlpha, toAlpha, onComplete)
+  StopFade()
+  tt:SetAlpha(fromAlpha)
+  tt:Show()
+  fadeDriver.tt = tt
+  fadeDriver.from = fromAlpha
+  fadeDriver.to = toAlpha
+  fadeDriver.elapsed = 0
+  fadeDriver.onComplete = onComplete
+  fadeDriver:SetScript("OnUpdate", function(self, dt)
+    self.elapsed = self.elapsed + dt
+    local progress = math.min(1, self.elapsed / FADE_DURATION)
+    self.tt:SetAlpha(self.from + (self.to - self.from) * progress)
+    if progress >= 1 then
+      self:SetScript("OnUpdate", nil)
+      local cb = self.onComplete
+      self.onComplete = nil
+      if cb then cb() end
+    end
+  end)
+end
+
+local function HideProgressTooltip()
+  if not progressTooltip or not tooltipShown then
+    if progressTooltip then progressTooltip:Hide() end
+    tooltipShown = false
+    return
+  end
+  tooltipShown = false
+  local tt = progressTooltip
+  StartFade(tt, tt:GetAlpha(), 0, function() tt:Hide() end)
+end
+
+local function CancelHideTimer()
+  if hideTimer then
+    hideTimer:Cancel()
+    hideTimer = nil
+  end
+end
+
+local function ApplyTooltipWidth(tt, button)
+  local width = button:GetWidth()
+  if width and width > 0 then
+    tt:SetMinimumWidth(width)
+  end
+end
+
+local function ShowProgressOnButton(button, text, color)
+  if not button then return end
+  local tt = EnsureProgressTooltip()
+  local needsReanchor = tt:GetOwner() ~= button
+  if needsReanchor then
+    tt:SetOwner(button, "ANCHOR_TOP")
+  end
+  ApplyTooltipWidth(tt, button)
+  tt:SetText(text, color[1], color[2], color[3])
+  if not tooltipShown then
+    tooltipShown = true
+    StartFade(tt, 0, 1, nil)
+  else
+    StopFade()
+    tt:SetAlpha(1)
+    tt:Show()
+  end
+end
+
+local function ShowProgress(text, color)
+  CancelHideTimer()
+  lastText = text
+  lastColor = color
+  ShowProgressOnButton(ActiveButton(), text, color)
+end
+
+local function ShowFinalThenHide(text, color)
+  CancelHideTimer()
+  scanActive = false
+  lastText = text
+  lastColor = color
+  ShowProgressOnButton(ActiveButton(), text, color)
+  hideTimer = C_Timer.NewTimer(FINAL_HOLD_SECONDS, function()
+    hideTimer = nil
+    lastText = nil
+    lastColor = nil
+    HideProgressTooltip()
+  end)
+end
+
+local function ReceiveEvent(_, eventName, eventData)
   local events = Auctionator and Auctionator.FullScan and Auctionator.FullScan.Events
   if not events then return end
 
   if eventName == events.ScanStart then
-    SetStatus(self, "0%", COLOR_WHITE)
+    scanActive = true
+    ShowProgress("0%", COLOR_WHITE)
   elseif eventName == events.ScanProgress then
+    if not scanActive then return end
     local pct = math.floor((eventData or 0) * 100)
-    SetStatus(self, pct .. "%", COLOR_WHITE)
+    if pct >= 100 then
+      ShowFinalThenHide("Completed", COLOR_GREEN)
+    else
+      ShowProgress(pct .. "%", COLOR_WHITE)
+    end
   elseif eventName == events.ScanComplete then
-    FlashStatus(self, COMPLETE_LABEL, COLOR_GREEN)
+    ShowFinalThenHide("Completed", COLOR_GREEN)
   elseif eventName == events.ScanFailed then
-    FlashStatus(self, CANCELLED_LABEL, COLOR_RED)
+    ShowFinalThenHide("Cancelled", COLOR_RED)
   end
 end
 
-local function RegisterEvents(button)
-  if button._fsEventsRegistered then return end
+local eventReceiver = { ReceiveEvent = ReceiveEvent }
+
+local function RegisterEvents()
+  if eventReceiver._registered then return end
   if not (Auctionator and Auctionator.EventBus and Auctionator.FullScan and Auctionator.FullScan.Events) then
     return
   end
-  button._fsEventsRegistered = true
-  button.ReceiveEvent = ReceiveEvent
-
-  Auctionator.EventBus:Register(button, {
+  eventReceiver._registered = true
+  Auctionator.EventBus:Register(eventReceiver, {
     Auctionator.FullScan.Events.ScanStart,
     Auctionator.FullScan.Events.ScanProgress,
     Auctionator.FullScan.Events.ScanComplete,
@@ -86,27 +171,35 @@ local function RegisterEvents(button)
   })
 end
 
-function FF.FullScanButton.Ensure()
-  if FF.fullScanButton then
-    RegisterEvents(FF.fullScanButton)
-    return true
-  end
+local function RepositionSellingBottomRow(buyFrame)
+  if not buyFrame or buyFrame._fsBottomRowRepositioned then return end
+  local history = buyFrame.HistoryButton
+  local cp = buyFrame.CurrentPrices
+  local refresh = cp and cp.RefreshButton
+  local buy = cp and cp.BuyButton
+  local cancel = cp and cp.CancelButton
+  if not history or not refresh or not buy or not cancel then return end
 
-  local ahFrame = FF.Adapter and FF.Adapter.GetAHFrame and FF.Adapter.GetAHFrame()
-  if not ahFrame then return false end
+  buy:SetPoint("BOTTOMRIGHT", cancel, "BOTTOMLEFT", -BUTTON_GAP, 0)
+  refresh:SetPoint("BOTTOMRIGHT", buy, "BOTTOMLEFT", -BUTTON_GAP, 0)
+  history:ClearAllPoints()
+  history:SetPoint("BOTTOMRIGHT", refresh, "BOTTOMLEFT", -BUTTON_GAP, 0)
 
-  local closeButton = (ahFrame and ahFrame.CloseButton) or _G.AuctionFrameCloseButton
-  if not closeButton then return false end
+  buyFrame._fsBottomRowRepositioned = true
+end
 
-  local button = CreateFrame("Button", "AuctionatorPlusFullScanButton", ahFrame, "UIPanelButtonTemplate")
-  button:SetHeight(BUTTON_HEIGHT)
-  button:SetPoint("RIGHT", closeButton, "LEFT", CLOSE_BUTTON_GAP, 0)
-  button:SetFrameStrata(ahFrame:GetFrameStrata())
-  button:SetFrameLevel(ahFrame:GetFrameLevel() + 5)
+local function CreateButton(name, parent, leftRegion, bottomRegion)
+  local button = CreateFrame("Button", name, parent, "UIPanelButtonTemplate")
+  button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
   button:SetText(BUTTON_LABEL)
-  ApplyButtonWidth(button)
+  button:SetFrameStrata(parent:GetFrameStrata())
+  button:SetFrameLevel(parent:GetFrameLevel() + 5)
+  button:ClearAllPoints()
+  button:SetPoint("LEFT", leftRegion, "LEFT", 0, 0)
+  button:SetPoint("BOTTOM", bottomRegion, "BOTTOM", 0, 0)
   button:SetScript("OnClick", OnClick)
   button:SetScript("OnEnter", function(self)
+    if scanActive or hideTimer then return end
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     GameTooltip:SetText("Auctionator Full Scan")
     GameTooltip:AddLine(
@@ -115,16 +208,48 @@ function FF.FullScanButton.Ensure()
     GameTooltip:Show()
   end)
   button:SetScript("OnLeave", GameTooltip_Hide)
+  button:SetScript("OnShow", function(self)
+    if (scanActive or hideTimer) and lastText and lastColor then
+      ShowProgressOnButton(self, lastText, lastColor)
+    end
+  end)
+  button:SetScript("OnHide", HideProgressTooltip)
+  return button
+end
 
-  local status = button:CreateFontString(nil, "OVERLAY", "GameFontNormalOutline")
-  status:SetPoint("LEFT", button, "RIGHT", STATUS_GAP, 0)
-  status:SetTextColor(1, 1, 1)
-  status:Hide()
-  button._statusLabel = status
-
-  button:Show()
-
-  FF.fullScanButton = button
-  RegisterEvents(button)
+local function EnsureShoppingButton()
+  if FF.fullScanShoppingButton then return true end
+  local shoppingFrame = _G.AuctionatorShoppingFrame
+  local inset = shoppingFrame and shoppingFrame.ShoppingResultsInset
+  local bg = inset and inset.Bg
+  local exportButton = shoppingFrame and shoppingFrame.ExportCSV
+  if not shoppingFrame or not bg or not exportButton then return false end
+  FF.fullScanShoppingButton = CreateButton(
+    "AuctionatorPlusFullScanShoppingButton", shoppingFrame, bg, exportButton)
   return true
+end
+
+local function EnsureSellingButton()
+  if FF.fullScanSellingButton then return true end
+  local sellingFrame = _G.AuctionatorSellingFrame
+  local buyFrame = sellingFrame and sellingFrame.BuyFrame
+  local currentPrices = buyFrame and buyFrame.CurrentPrices
+  local inset = currentPrices and currentPrices.Inset
+  local bg = inset and inset.Bg
+  local refresh = currentPrices and currentPrices.RefreshButton
+  local history = buyFrame and buyFrame.HistoryButton
+  if not buyFrame or not bg or not refresh or not history then return false end
+  RepositionSellingBottomRow(buyFrame)
+  local btn = CreateButton(
+    "AuctionatorPlusFullScanSellingButton", buyFrame, bg, refresh)
+  btn:SetPoint("RIGHT", history, "LEFT", -BUTTON_GAP, 0)
+  FF.fullScanSellingButton = btn
+  return true
+end
+
+function FF.FullScanButton.Ensure()
+  RegisterEvents()
+  local shoppingReady = EnsureShoppingButton()
+  local sellingReady = EnsureSellingButton()
+  return shoppingReady and sellingReady
 end
