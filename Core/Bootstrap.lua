@@ -29,38 +29,9 @@ local function CreateFlipButton()
   return true
 end
 
-local function CreateStatButton()
-  if FF.statToggleButton then return true end
-  if not FF.toggleButton then return false end
-
-  local button = CreateFrame("Button", "FlipperStatButton", FF.toggleButton:GetParent(), "UIPanelButtonTemplate")
-  button:SetSize(120, 22)
-  button:SetText("Stats Filter")
-  button:SetPoint("LEFT", FF.toggleButton, "RIGHT", BUTTON_GAP, 0)
-  button:SetFrameStrata(FF.toggleButton:GetFrameStrata())
-  button:SetFrameLevel(FF.toggleButton:GetFrameLevel())
-  button:SetScript("OnClick", FF.StatPanel.Toggle)
-  button:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Stats Filter panel")
-    GameTooltip:AddLine(
-      "Finds items in Auctionator shopping results by item stats. Enter comma-separated terms like agility, stamina, dps.",
-      1, 1, 1, true)
-    GameTooltip:Show()
-  end)
-  button:SetScript("OnLeave", GameTooltip_Hide)
-  button:Show()
-
-  FF.statToggleButton = button
-  return true
-end
-
 local function SetFinderButtonsShown(shown)
   if FF.toggleButton then
     if shown then FF.toggleButton:Show() else FF.toggleButton:Hide() end
-  end
-  if FF.statToggleButton then
-    if shown then FF.statToggleButton:Show() else FF.statToggleButton:Hide() end
   end
   if FF.fullScanShoppingButton then
     if shown then FF.fullScanShoppingButton:Show() else FF.fullScanShoppingButton:Hide() end
@@ -74,7 +45,7 @@ end
 
 local function HookBuyFrameVisibility()
   if FF.buyFrameHooked then return true end
-  if not (FF.toggleButton and FF.statToggleButton) then return false end
+  if not FF.toggleButton then return false end
 
   local buyFrame = _G.AuctionatorBuyFrame
   if not buyFrame then return false end
@@ -97,9 +68,9 @@ local function EnsureToggleButton(attempt)
   attempt = attempt or 1
   local fullScanReady = FF.FullScanButton and FF.FullScanButton.Ensure()
   local flipReady = fullScanReady and CreateFlipButton()
-  local statReady = flipReady and CreateStatButton()
-  local buyHooked = statReady and HookBuyFrameVisibility()
-  if (fullScanReady and flipReady and statReady and buyHooked) or attempt > 20 then return end
+  local buyHooked = flipReady and HookBuyFrameVisibility()
+  local watchReady = FF.SellingWatch and FF.SellingWatch.Ensure()
+  if (fullScanReady and flipReady and buyHooked and watchReady) or attempt > 20 then return end
   C_Timer.After(0.5, function() EnsureToggleButton(attempt + 1) end)
 end
 
@@ -109,8 +80,15 @@ bootstrap:RegisterEvent("AUCTION_HOUSE_SHOW")
 bootstrap:RegisterEvent("AUCTION_HOUSE_CLOSED")
 bootstrap:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
+    if FF.Settings and FF.Settings.Load then FF.Settings.Load() end
     if FF.Adapter and FF.Adapter.RegisterEventBus then
       FF.Adapter.RegisterEventBus()
+    end
+    if FF.SellingWatch and FF.SellingWatch.Ensure then
+      FF.SellingWatch.Ensure()
+    end
+    if FF.ShoppingFilter and FF.ShoppingFilter.Hook then
+      FF.ShoppingFilter.Hook()
     end
     if FF.Adapter and FF.Adapter.RegisterTooltipHook and FF.Tooltip and FF.Tooltip.Apply then
       FF.Adapter.RegisterTooltipHook(FF.Tooltip.Apply)
@@ -124,8 +102,6 @@ bootstrap:SetScript("OnEvent", function(_, event)
 
   elseif event == "AUCTION_HOUSE_CLOSED" then
     FF.Scanner.Abort()
-    if FF.StatFilter and FF.StatFilter.Abort then FF.StatFilter.Abort() end
     if FF.panel then FF.panel:Hide() end
-    if FF.statPanel then FF.statPanel:Hide() end
   end
 end)

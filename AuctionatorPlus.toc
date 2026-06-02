@@ -1,12 +1,12 @@
-## Interface: 120005, 11508
+## Interface: 11508
 ## Title: Auctionator Plus
 ## Category: Auctions
 ## Notes: Companion add-on for Auctionator. Adds price-history tooltips, a stat-finder panel, and a flip-finder panel to the Auction House.
 ## Author: MIYANKO
 ## Version: 2.0.0
 ## Dependencies: Auctionator
+## SavedVariablesPerCharacter: AuctionatorPlusDB
 ## IconTexture: 132112
 
 Core\Manifest.xml
-Retail\Manifest.xml [AllowLoadGameType mainline]
-Classic\Manifest.xml [AllowLoadGameType vanilla]
+Classic\Manifest.xml

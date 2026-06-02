@@ -28,18 +28,4 @@ FF.Constants = {
     AverageLabel = "Average Min. Buyout",
     TrendLabel   = "Trend",
   },
-
-  StatPanel = {
-    Width            = 540,
-    Height           = 540,
-    RowHeight        = 24,
-    InputMaxLetters  = 120,
-    Columns = {
-      Item   = 180,
-      Buyout = 90,
-      Avg    = 95,
-      Trend  = 60,
-      Gap    = 8,
-    },
-  },
 }

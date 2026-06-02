@@ -1,0 +1,436 @@
+FF.SellingWatch = {}
+
+-- Non-gear equip locations to ignore (trade goods / unequippable items report an
+-- empty equipLoc). Every other equippable slot is supported.
+local NON_GEAR_SLOTS = {
+  [""] = true,
+  INVTYPE_BAG = true,
+  INVTYPE_QUIVER = true,
+  INVTYPE_AMMO = true,
+  INVTYPE_NON_EQUIP = true,
+  INVTYPE_NON_EQUIP_IGNORE = true,
+}
+
+-- Body-armor slots carry an armor-type (cloth/leather/...) distinction; cloak,
+-- neck, finger and trinket are wearable by all classes, so they are excluded.
+local BODY_ARMOR_SLOTS = {
+  INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
+  INVTYPE_ROBE = true, INVTYPE_WAIST = true, INVTYPE_LEGS = true,
+  INVTYPE_FEET = true, INVTYPE_WRIST = true, INVTYPE_HAND = true,
+}
+
+local LEVEL_RANGE = 2
+
+-- A single placement fires StartFakeBuyLoading several times in a burst; absorb
+-- repeats of the same item within this window, but re-run on a genuine re-drop.
+local REDROP_DEBOUNCE = 1.0
+
+local watch = {
+  token = 0,          -- bumped per placement; supersedes in-flight work
+  lastLink = nil,
+  lastProcessAt = nil,
+  pending = nil,      -- profile of the current sale item awaiting comparables
+  scanning = false,
+  scanEntries = nil,
+  scanToken = nil,
+}
+local eventReceiver
+
+local function IsSupportedGear(equipLoc)
+  return type(equipLoc) == "string" and NON_GEAR_SLOTS[equipLoc] ~= true
+end
+
+-- Weapons compare by weapon type only (restricted server-side via the category);
+-- armor narrows by slot, plus armor type for the body slots.
+local function BuildFilter(classID, equipLoc, itemSubType)
+  if classID == Enum.ItemClass.Weapon then
+    return nil
+  end
+  local filter = { equipLoc = equipLoc }
+  if BODY_ARMOR_SLOTS[equipLoc] then
+    filter.armorSubType = itemSubType
+  end
+  return filter
+end
+
+-- classID + Auctionator categoryKey for the item, slot-scoped for body armor
+-- (e.g. "Armor/Mail/Hands"), otherwise class/subclass (e.g. "Weapon/Daggers").
+local function CategoryForItem(itemLink, equipLoc)
+  local _, _, _, _, _, classID, subClassID = GetItemInfoInstant(itemLink)
+  if not classID then return nil end
+  local className = C_Item.GetItemClassInfo(classID)
+  if not className then return nil end
+
+  local subName = subClassID and C_Item.GetItemSubClassInfo(classID, subClassID)
+  local categoryKey = className
+  if subName and subName ~= "" then
+    categoryKey = categoryKey .. "/" .. subName
+  end
+  if BODY_ARMOR_SLOTS[equipLoc] then
+    local slotName = _G[equipLoc]
+    if slotName and slotName ~= "" then
+      local withSlot = categoryKey .. "/" .. slotName
+      if Auctionator.Search.GetItemClassCategories(withSlot) then
+        categoryKey = withSlot
+      end
+    end
+  end
+  return classID, categoryKey
+end
+
+-- Build the comparison profile for the dropped sale item (synchronous; the item
+-- is cached once it is in the sell slot). nil for unsupported items.
+local function ProfileForItem(itemLink)
+  local equipLoc, _, itemSubType = FF.StatScan.GetEquipInfo(itemLink)
+  if not IsSupportedGear(equipLoc) then return nil end
+
+  local classID, categoryKey = CategoryForItem(itemLink, equipLoc)
+  if not categoryKey then return nil end
+
+  local requiredLevel = select(5, GetItemInfo(itemLink)) or 0
+  local minLevel, maxLevel
+  if requiredLevel > 0 then
+    minLevel = math.max(1, requiredLevel - LEVEL_RANGE)
+    maxLevel = requiredLevel + LEVEL_RANGE
+  end
+
+  return {
+    itemLink = itemLink,
+    categoryKey = categoryKey,
+    filter = BuildFilter(classID, equipLoc, itemSubType),
+    minLevel = minLevel,
+    maxLevel = maxLevel,
+    statSet = FF.StatScan.PrimaryStatSet(FF.StatScan.ReadItemText(itemLink)),
+  }
+end
+
+-- Candidate must sit in the same slot/armor type as the dropped item.
+local function PassesFilter(itemLink, filter)
+  if not filter then return true end
+  local equipLoc, _, subType = FF.StatScan.GetEquipInfo(itemLink)
+  if not equipLoc then return false end
+  if filter.equipLoc and equipLoc ~= filter.equipLoc then return false end
+  if filter.armorSubType and subType ~= filter.armorSubType then return false end
+  return true
+end
+
+-- The selling tab's live current-prices data provider (name-based listing).
+local function CurrentPricesProvider()
+  local frame = _G.AuctionatorSellingFrame
+  local buyFrame = frame and frame.BuyFrame
+  local currentPrices = buyFrame and buyFrame.CurrentPrices
+  return currentPrices and currentPrices.SearchDataProvider
+end
+
+local function ScanEvents()
+  return { Auctionator.AH.Events.ScanResultsUpdate, Auctionator.AH.Events.ScanAborted }
+end
+
+local function StopScan()
+  if watch.scanning then
+    watch.scanning = false
+    Auctionator.AH.AbortQuery()
+    Auctionator.EventBus:Unregister(eventReceiver, ScanEvents())
+  end
+  watch.scanEntries = nil
+end
+
+-- Load every candidate's item data, then call back. Reading stat tooltips on
+-- random-suffix gear needs the item cached, so wait before filtering by stats.
+local function EnsureLoaded(entries, callback)
+  local loading = {}
+  for _, entry in ipairs(entries) do
+    local item = entry.itemLink and Item:CreateFromItemLink(entry.itemLink)
+    if item and not item:IsItemEmpty() and not item:IsItemDataCached() then
+      table.insert(loading, item)
+    end
+  end
+  local remaining = #loading
+  if remaining == 0 then callback(); return end
+  for _, item in ipairs(loading) do
+    item:ContinueOnItemLoad(function()
+      remaining = remaining - 1
+      if remaining == 0 then callback() end
+    end)
+  end
+end
+
+-- Append the kept entries to the current-prices listing and repaint.
+local function MergeIntoProvider(provider, entries)
+  local added = 0
+  for _, entry in ipairs(entries) do
+    entry.page = 0
+    entry.query = provider.query
+    table.insert(provider.allAuctions, entry)
+    added = added + 1
+  end
+  if added > 0 then provider:PopulateAuctions() end
+end
+
+-- Merge slot/armor/level matches into the current-prices listing alongside the
+-- name-based results. With "Same Stats" on, narrow further to items carrying the
+-- exact same primary-stat set as the dropped item (values ignored).
+local function InjectComparables(pending, entries)
+  local provider = CurrentPricesProvider()
+  if not provider or not provider.allAuctions then return end
+
+  local candidates = {}
+  for _, entry in ipairs(entries) do
+    local link = entry.itemLink
+    if link
+        and Auctionator.Search.GetCleanItemLink(link) ~= provider.searchKey
+        and PassesFilter(link, pending.filter) then
+      table.insert(candidates, entry)
+    end
+  end
+
+  if not (FF.Settings.sameStats and pending.statSet) then
+    MergeIntoProvider(provider, candidates)
+    return
+  end
+
+  EnsureLoaded(candidates, function()
+    if watch.pending ~= pending then return end
+    local matches = {}
+    for _, entry in ipairs(candidates) do
+      local set = FF.StatScan.PrimaryStatSet(FF.StatScan.ReadItemText(entry.itemLink))
+      if FF.StatScan.SameStatSet(set, pending.statSet) then
+        table.insert(matches, entry)
+      end
+    end
+    MergeIntoProvider(provider, matches)
+  end)
+end
+
+-- Background search for same slot/armor type within +/- LEVEL_RANGE of the
+-- required level. Runs on the shared scanner without switching tabs; safe to
+-- start here because the selling tab's own name search has just finished.
+local function RunComparableSearch(pending)
+  watch.scanEntries = {}
+  watch.scanning = true
+  watch.scanToken = pending.token
+  Auctionator.EventBus:Register(eventReceiver, ScanEvents())
+
+  local ok = pcall(Auctionator.AH.QueryAuctionItems, {
+    searchString = "",
+    minLevel = pending.minLevel,
+    maxLevel = pending.maxLevel,
+    itemClassFilters = Auctionator.Search.GetItemClassCategories(pending.categoryKey) or {},
+    isExact = false,
+  })
+  if not ok then StopScan() end
+end
+
+local function CommitPending(itemLink)
+  watch.lastLink = itemLink
+  watch.lastProcessAt = GetTime()
+
+  local profile = ProfileForItem(itemLink)
+  if not profile then
+    watch.pending = nil
+    return
+  end
+  profile.token = watch.token
+  watch.pending = profile
+end
+
+-- A gear item entered the sale slot: capture its profile. The comparable search
+-- is started once the selling tab's own name search completes (ViewSetup), so
+-- the two don't fight over the shared scanner.
+local function StartForItem(itemLink)
+  watch.token = watch.token + 1
+  StopScan()
+
+  if GetItemInfo(itemLink) then
+    CommitPending(itemLink)
+  else
+    local token = watch.token
+    local item = Item:CreateFromItemLink(itemLink)
+    if item and not item:IsItemEmpty() then
+      item:ContinueOnItemLoad(function()
+        if token == watch.token then CommitPending(itemLink) end
+      end)
+    end
+  end
+end
+
+local function ReceiveEvent(_, eventName, eventData, arg3)
+  local Selling = Auctionator.Selling.Events
+  local Buying = Auctionator.Buying.Events
+  local AH = Auctionator.AH.Events
+
+  if eventName == Selling.StartFakeBuyLoading then
+    if not FF.Settings.checkOtherItems then return end
+    local link = eventData and eventData.itemLink
+    if not link then return end
+    -- Skip the rapid repeat fires for the item we just handled; a later re-drop
+    -- still re-runs so the comparables stay up to date.
+    if link == watch.lastLink and watch.lastProcessAt
+        and (GetTime() - watch.lastProcessAt) < REDROP_DEBOUNCE then
+      return
+    end
+    StartForItem(link)
+
+  elseif eventName == Selling.ClearBagItem then
+    watch.token = watch.token + 1
+    watch.lastLink = nil
+    watch.pending = nil
+    StopScan()
+
+  elseif eventName == Buying.ViewSetup then
+    -- The selling tab's name search finished; the scanner is free for ours.
+    local pending = watch.pending
+    if pending and not pending.searchStarted then
+      pending.searchStarted = true
+      C_Timer.After(0, function()
+        if watch.pending == pending then RunComparableSearch(pending) end
+      end)
+    end
+
+  elseif eventName == AH.ScanResultsUpdate then
+    if not watch.scanning then return end
+    if type(eventData) == "table" then
+      for _, entry in ipairs(eventData) do
+        table.insert(watch.scanEntries, entry)
+      end
+    end
+    if arg3 then -- gotAllResults
+      local pending, collected, token = watch.pending, watch.scanEntries, watch.scanToken
+      watch.scanning = false
+      Auctionator.EventBus:Unregister(eventReceiver, ScanEvents())
+      watch.scanEntries = nil
+      if pending and pending.token == token then
+        InjectComparables(pending, collected)
+      end
+    end
+
+  elseif eventName == AH.ScanAborted then
+    if watch.scanning then
+      watch.scanning = false
+      Auctionator.EventBus:Unregister(eventReceiver, ScanEvents())
+      watch.scanEntries = nil
+    end
+  end
+end
+
+eventReceiver = { ReceiveEvent = ReceiveEvent }
+
+local function RegisterEvents()
+  if eventReceiver._registered then return end
+  local A = Auctionator
+  if not (A and A.EventBus and A.Selling and A.Selling.Events
+      and A.Buying and A.Buying.Events and A.AH and A.AH.Events) then
+    return
+  end
+  eventReceiver._registered = true
+
+  A.EventBus:RegisterSource(eventReceiver, "AuctionatorPlusSellingWatch")
+  A.EventBus:Register(eventReceiver, {
+    A.Selling.Events.StartFakeBuyLoading,
+    A.Selling.Events.ClearBagItem,
+    A.Buying.Events.ViewSetup,
+  })
+end
+
+local function EnsureCheckbox()
+  if FF.checkOtherItemsButton then return true end
+  local sellingFrame = _G.AuctionatorSellingFrame
+  local anchor = sellingFrame and (sellingFrame.BagInset or sellingFrame)
+  if not sellingFrame or not anchor then return false end
+
+  local check = CreateFrame(
+    "CheckButton", "AuctionatorPlusCheckSimilarItems", sellingFrame, "UICheckButtonTemplate")
+  check:SetSize(24, 24)
+  check:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 4, 3)
+  check:SetChecked(FF.Settings.checkOtherItems)
+
+  local label = check:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  label:SetPoint("LEFT", check, "RIGHT", 2, 0)
+  label:SetText("Check Similar Items")
+
+  -- "Same Stats" narrows the similar-items list to the same primary-stat set.
+  -- Only meaningful while similar items are shown, so it tracks the box above.
+  local sameStats = CreateFrame(
+    "CheckButton", "AuctionatorPlusSameStats", sellingFrame, "UICheckButtonTemplate")
+  sameStats:SetSize(24, 24)
+  sameStats:SetPoint("LEFT", label, "RIGHT", 12, 0)
+  sameStats:SetChecked(FF.Settings.sameStats)
+
+  local sameStatsLabel = sameStats:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+  sameStatsLabel:SetPoint("LEFT", sameStats, "RIGHT", 2, 0)
+  sameStatsLabel:SetText("Same Stats")
+
+  local function UpdateSameStatsEnabled()
+    if FF.Settings.checkOtherItems then
+      sameStats:Enable()
+      sameStatsLabel:SetFontObject("GameFontNormalSmall")
+    else
+      sameStats:Disable()
+      sameStatsLabel:SetFontObject("GameFontDisableSmall")
+    end
+  end
+
+  check:SetScript("OnClick", function(self)
+    FF.Settings.checkOtherItems = self:GetChecked() and true or false
+    FF.Settings.Save()
+    UpdateSameStatsEnabled()
+  end)
+  check:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Check Similar Items")
+    GameTooltip:AddLine(
+      "When a gear item is placed for sale, also list other auctions of the same slot, armor type, and required level (+/-2) in the current prices panel.",
+      1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  check:SetScript("OnLeave", GameTooltip_Hide)
+
+  sameStats:SetScript("OnClick", function(self)
+    FF.Settings.sameStats = self:GetChecked() and true or false
+    FF.Settings.Save()
+  end)
+  sameStats:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Same Stats")
+    GameTooltip:AddLine(
+      "Only list similar items that carry the same stats as the item being sold (e.g. Agility and Stamina). Stat values are ignored.",
+      1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  sameStats:SetScript("OnLeave", GameTooltip_Hide)
+
+  UpdateSameStatsEnabled()
+
+  FF.checkOtherItemsButton = check
+  FF.sameStatsButton = sameStats
+
+  return true
+end
+
+local function HookRefreshButton()
+  if FF.refreshButtonHooked then return true end
+  local sellingFrame = _G.AuctionatorSellingFrame
+  local buyFrame = sellingFrame and sellingFrame.BuyFrame
+  local currentPrices = buyFrame and buyFrame.CurrentPrices
+  local refreshButton = currentPrices and currentPrices.RefreshButton
+  if not refreshButton then return false end
+
+  -- Refresh clears the data provider's auctions and re-runs the name search;
+  -- clearing searchStarted lets the next ViewSetup re-trigger our comparable
+  -- scan so the merged results stay in sync.
+  refreshButton:HookScript("OnClick", function()
+    if not watch.pending then return end
+    StopScan()
+    watch.pending.searchStarted = false
+  end)
+
+  FF.refreshButtonHooked = true
+  return true
+end
+
+function FF.SellingWatch.Ensure()
+  RegisterEvents()
+  local checkboxOk = EnsureCheckbox()
+  local refreshOk = HookRefreshButton()
+  return checkboxOk and refreshOk
+end

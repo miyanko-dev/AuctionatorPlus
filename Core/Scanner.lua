@@ -15,8 +15,6 @@ function FF.Scanner.ResetCollected()
     FF.panel:SetScanningUI(false)
     FF.panel:Render()
   end
-  if FF.StatFilter and FF.StatFilter.Abort then FF.StatFilter.Abort() end
-  if FF.StatFilter and FF.StatFilter.ResetResults then FF.StatFilter.ResetResults() end
 end
 
 function FF.Scanner.CollectEntries(entries)
