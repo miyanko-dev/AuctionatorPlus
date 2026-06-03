@@ -95,12 +95,14 @@ bootstrap:SetScript("OnEvent", function(_, event)
     end
 
   elseif event == "AUCTION_HOUSE_SHOW" then
+    FF.ahOpen = true
     if FF.Adapter and FF.Adapter.RegisterEventBus then
       FF.Adapter.RegisterEventBus()
     end
     EnsureToggleButton()
 
   elseif event == "AUCTION_HOUSE_CLOSED" then
+    FF.ahOpen = false
     FF.Scanner.Abort()
     if FF.panel then FF.panel:Hide() end
   end

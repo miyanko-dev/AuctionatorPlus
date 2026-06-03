@@ -9,6 +9,9 @@ FF.panel = nil
 FF.toggleButton = nil
 FF.hasScanned = false
 
+-- Tracks whether the auction house is currently open (set in Bootstrap).
+FF.ahOpen = false
+
 FF.sortProperty = "roi"
 FF.sortDirection = "desc"
 

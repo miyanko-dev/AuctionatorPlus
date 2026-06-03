@@ -3,7 +3,9 @@
   <Script file="Constants.lua"/>
   <Script file="Format.lua"/>
   <Script file="History.lua"/>
+  <Script file="Trend.lua"/>
   <Script file="Tooltip.lua"/>
+  <Script file="Columns.lua"/>
   <Script file="Bracket.lua"/>
   <Script file="Filters.lua"/>
   <Script file="Scanner.lua"/>

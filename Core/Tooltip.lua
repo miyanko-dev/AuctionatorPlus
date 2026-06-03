@@ -15,13 +15,6 @@ local function CurrentAuctionPrice(itemLink)
   return price
 end
 
-local function FormatTrend(current, average)
-  if not current or not average or average <= 0 then return nil end
-  local pct = math.floor((current - average) / average * 100 + 0.5)
-  if pct == 0 then return "0%" end
-  return string.format("%+d%%", pct)
-end
-
 local function DBKeyForLink(itemLink)
   if not (Auctionator and Auctionator.Utilities
       and Auctionator.Utilities.BasicDBKeyFromLink) then
@@ -39,6 +32,27 @@ local function White(text)
   return "|cffffffff" .. tostring(text) .. "|r"
 end
 
+-- Trend colour depends on the active auction-house view: the selling tab and
+-- the native Browse/Auctions tabs treat price increases as good (green); the
+-- shopping/browse tab reverses it (increases red). Any other view shows the
+-- trend without a verdict (white). Uses IsVisible so a deselected Auctionator
+-- tab (its wrapper hidden) does not register as active.
+local function TrendMode()
+  if _G.AuctionatorShoppingFrame and _G.AuctionatorShoppingFrame:IsVisible() then
+    return FF.Trend.UP_RED
+  end
+  if _G.AuctionatorSellingFrame and _G.AuctionatorSellingFrame:IsVisible() then
+    return FF.Trend.UP_GREEN
+  end
+  if _G.AuctionFrameBrowse and _G.AuctionFrameBrowse:IsVisible() then
+    return FF.Trend.UP_GREEN
+  end
+  if _G.AuctionFrameAuctions and _G.AuctionFrameAuctions:IsVisible() then
+    return FF.Trend.UP_GREEN
+  end
+  return FF.Trend.NEUTRAL
+end
+
 function FF.Tooltip.Apply(tooltip, itemLink)
   if not tooltip or not itemLink then return end
 
@@ -53,9 +67,14 @@ function FF.Tooltip.Apply(tooltip, itemLink)
   local cfg = FF.Constants.Tooltip
   tooltip:AddDoubleLine(cfg.AverageLabel, White(FF.Format.Money(stats.averageMinBuyout)))
 
-  local trendText = FormatTrend(CurrentAuctionPrice(itemLink), stats.averageMinBuyout)
-  if trendText then
-    tooltip:AddDoubleLine(cfg.TrendLabel, White(trendText))
+  -- The trend percentage is only meaningful at the auction house, so it shows
+  -- only while the AH is open and is coloured for the active view.
+  if FF.ahOpen then
+    local pct = FF.Trend.Percent(CurrentAuctionPrice(itemLink), stats.averageMinBuyout)
+    local trendText = FF.Trend.Colorize(pct, TrendMode())
+    if trendText then
+      tooltip:AddDoubleLine(cfg.TrendLabel, trendText)
+    end
   end
 
   -- Trigger a resize so newly added lines render inside the tooltip frame

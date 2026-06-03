@@ -6,6 +6,7 @@ FF.Constants = {
   DefaultUndercutPercent = 2,
   HistoricalMultipleCap = 3,
   ScanTimeoutSeconds = 6,
+  HistoryWindowDays = 30,  -- price trend only considers the last month of data
 
   PanelWidth = 950,
   PanelHeight = 540,
