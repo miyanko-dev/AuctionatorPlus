@@ -8,5 +8,14 @@
 ## SavedVariablesPerCharacter: AuctionatorPlusDB
 ## IconTexture: 132112
 
-Core\Manifest.xml
-Classic\Manifest.xml
+Core\Init.lua
+Core\Bridge.lua
+Core\StatScan.lua
+Core\PriceHistory.lua
+Core\TrendColumn.lua
+Core\Arbitrage.lua
+Core\ArbitragePanel.lua
+Core\SellingWatch.lua
+Core\ShoppingFilter.lua
+Core\FullScanButton.lua
+Core\Bootstrap.lua

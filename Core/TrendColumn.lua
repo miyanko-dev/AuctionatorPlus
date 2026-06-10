@@ -1,4 +1,4 @@
-FF.Columns = {}
+local _, AP = ...
 
 local TREND_HEADER     = "Trend"
 local TREND_TEXT_FIELD = "auctionatorPlusTrendText"  -- coloured string (display)
@@ -14,14 +14,14 @@ local AVAILABLE_FIELD = "availablePretty"
 local AVAILABLE_WIDTH = 70
 
 local function SetTrendFields(entry, currentPrice, mode)
-  local average = FF.Trend.AverageFor(entry.itemLink)
-  local pct = FF.Trend.Percent(currentPrice, average)
+  local average = AP.Trend.AverageFor(entry.itemLink)
+  local pct = AP.Trend.Percent(currentPrice, average)
   if pct == nil then
     entry[TREND_SORT_FIELD] = nil
     entry[TREND_TEXT_FIELD] = ""
   else
     entry[TREND_SORT_FIELD] = pct
-    entry[TREND_TEXT_FIELD] = FF.Trend.Colorize(pct, mode)
+    entry[TREND_TEXT_FIELD] = AP.Trend.Colorize(pct, mode)
   end
 end
 
@@ -96,7 +96,7 @@ end
 local function DecorateShopping(_, entries)
   if type(entries) ~= "table" then return end
   for _, entry in ipairs(entries) do
-    SetTrendFields(entry, entry.minPrice, FF.Trend.UP_RED)
+    SetTrendFields(entry, entry.minPrice, AP.Trend.UP_RED)
   end
 end
 
@@ -106,30 +106,19 @@ end
 local function DecorateBuyAuctions(self)
   if type(self.currentResults) ~= "table" then return end
   if self.auctionatorPlusMode == nil then
-    self.auctionatorPlusMode = IsUnderSelling(self) and FF.Trend.UP_GREEN or FF.Trend.UP_RED
+    self.auctionatorPlusMode = IsUnderSelling(self) and AP.Trend.UP_GREEN or AP.Trend.UP_RED
   end
   for _, entry in ipairs(self.currentResults) do
     SetTrendFields(entry, entry.unitPrice, self.auctionatorPlusMode)
   end
 end
 
-function FF.Columns.Install()
-  if FF.Columns.installed then return end
-  if not (Auctionator and AuctionatorShoppingTabDataProviderMixin
-      and AuctionatorBuyAuctionsDataProviderMixin) then
-    return
-  end
-  FF.Columns.installed = true
+-- Auctionator is a hard dependency, so its provider mixins exist at load time;
+-- the AH frames that copy them are created later (on first open).
+WrapLayout(AuctionatorShoppingTabDataProviderMixin, SHOPPING_WIDTH)
+WrapSort(AuctionatorShoppingTabDataProviderMixin)
+hooksecurefunc(AuctionatorShoppingTabDataProviderMixin, "AddDetails", DecorateShopping)
 
-  WrapLayout(AuctionatorShoppingTabDataProviderMixin, SHOPPING_WIDTH)
-  WrapSort(AuctionatorShoppingTabDataProviderMixin)
-  hooksecurefunc(AuctionatorShoppingTabDataProviderMixin, "AddDetails", DecorateShopping)
-
-  WrapLayout(AuctionatorBuyAuctionsDataProviderMixin, BUY_WIDTH, AVAILABLE_FIELD, AVAILABLE_WIDTH)
-  WrapSort(AuctionatorBuyAuctionsDataProviderMixin)
-  hooksecurefunc(AuctionatorBuyAuctionsDataProviderMixin, "PopulateAuctions", DecorateBuyAuctions)
-end
-
--- Auctionator is a hard dependency, so its provider mixins exist by the time
--- this file loads; the AH frames that copy them are built later (on open).
-FF.Columns.Install()
+WrapLayout(AuctionatorBuyAuctionsDataProviderMixin, BUY_WIDTH, AVAILABLE_FIELD, AVAILABLE_WIDTH)
+WrapSort(AuctionatorBuyAuctionsDataProviderMixin)
+hooksecurefunc(AuctionatorBuyAuctionsDataProviderMixin, "PopulateAuctions", DecorateBuyAuctions)

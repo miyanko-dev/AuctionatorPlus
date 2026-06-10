@@ -1,4 +1,6 @@
-FF.FullScanButton = {}
+local _, AP = ...
+
+AP.FullScanButton = {}
 
 local BUTTON_LABEL = "Full Scan"
 local BUTTON_WIDTH = 110
@@ -19,7 +21,7 @@ local tooltipShown = false
 local fadeDriver = CreateFrame("Frame")
 
 local function ScanReady()
-  return Auctionator and Auctionator.State and Auctionator.State.FullScanFrameRef ~= nil
+  return Auctionator.State.FullScanFrameRef ~= nil
 end
 
 local function OnClick()
@@ -28,8 +30,8 @@ local function OnClick()
 end
 
 local function ActiveButton()
-  local shop = FF.fullScanShoppingButton
-  local sell = FF.fullScanSellingButton
+  local shop = AP.fullScanShoppingButton
+  local sell = AP.fullScanSellingButton
   if shop and shop:IsVisible() then return shop end
   if sell and sell:IsVisible() then return sell end
   return nil
@@ -96,8 +98,7 @@ end
 local function ShowProgressOnButton(button, text, color)
   if not button then return end
   local tt = EnsureProgressTooltip()
-  local needsReanchor = tt:GetOwner() ~= button
-  if needsReanchor then
+  if tt:GetOwner() ~= button then
     tt:SetOwner(button, "ANCHOR_TOP")
   end
   ApplyTooltipWidth(tt, button)
@@ -133,14 +134,18 @@ local function ShowFinalThenHide(text, color)
   end)
 end
 
-local function ReceiveEvent(_, eventName, eventData)
-  local events = Auctionator and Auctionator.FullScan and Auctionator.FullScan.Events
-  if not events then return end
+local ScanEvents = Auctionator.FullScan.Events
 
-  if eventName == events.ScanStart then
+AP.Bridge.Listen({
+  ScanEvents.ScanStart,
+  ScanEvents.ScanProgress,
+  ScanEvents.ScanComplete,
+  ScanEvents.ScanFailed,
+}, function(_, eventName, eventData)
+  if eventName == ScanEvents.ScanStart then
     scanActive = true
     ShowProgress("0%", COLOR_WHITE)
-  elseif eventName == events.ScanProgress then
+  elseif eventName == ScanEvents.ScanProgress then
     if not scanActive then return end
     local pct = math.floor((eventData or 0) * 100)
     if pct >= 100 then
@@ -148,31 +153,15 @@ local function ReceiveEvent(_, eventName, eventData)
     else
       ShowProgress(pct .. "%", COLOR_WHITE)
     end
-  elseif eventName == events.ScanComplete then
+  elseif eventName == ScanEvents.ScanComplete then
     ShowFinalThenHide("Completed", COLOR_GREEN)
-  elseif eventName == events.ScanFailed then
+  elseif eventName == ScanEvents.ScanFailed then
     ShowFinalThenHide("Cancelled", COLOR_RED)
   end
-end
-
-local eventReceiver = { ReceiveEvent = ReceiveEvent }
-
-local function RegisterEvents()
-  if eventReceiver._registered then return end
-  if not (Auctionator and Auctionator.EventBus and Auctionator.FullScan and Auctionator.FullScan.Events) then
-    return
-  end
-  eventReceiver._registered = true
-  Auctionator.EventBus:Register(eventReceiver, {
-    Auctionator.FullScan.Events.ScanStart,
-    Auctionator.FullScan.Events.ScanProgress,
-    Auctionator.FullScan.Events.ScanComplete,
-    Auctionator.FullScan.Events.ScanFailed,
-  })
-end
+end)
 
 local function RepositionSellingBottomRow(buyFrame)
-  if not buyFrame or buyFrame._fsBottomRowRepositioned then return end
+  if not buyFrame or buyFrame.auctionatorPlusBottomRowMoved then return end
   local history = buyFrame.HistoryButton
   local cp = buyFrame.CurrentPrices
   local refresh = cp and cp.RefreshButton
@@ -185,7 +174,7 @@ local function RepositionSellingBottomRow(buyFrame)
   history:ClearAllPoints()
   history:SetPoint("BOTTOMRIGHT", refresh, "BOTTOMLEFT", -BUTTON_GAP, 0)
 
-  buyFrame._fsBottomRowRepositioned = true
+  buyFrame.auctionatorPlusBottomRowMoved = true
 end
 
 local function CreateButton(name, parent, leftRegion, bottomRegion)
@@ -218,19 +207,19 @@ local function CreateButton(name, parent, leftRegion, bottomRegion)
 end
 
 local function EnsureShoppingButton()
-  if FF.fullScanShoppingButton then return true end
+  if AP.fullScanShoppingButton then return true end
   local shoppingFrame = _G.AuctionatorShoppingFrame
   local inset = shoppingFrame and shoppingFrame.ShoppingResultsInset
   local bg = inset and inset.Bg
   local exportButton = shoppingFrame and shoppingFrame.ExportCSV
   if not shoppingFrame or not bg or not exportButton then return false end
-  FF.fullScanShoppingButton = CreateButton(
+  AP.fullScanShoppingButton = CreateButton(
     "AuctionatorPlusFullScanShoppingButton", shoppingFrame, bg, exportButton)
   return true
 end
 
 local function EnsureSellingButton()
-  if FF.fullScanSellingButton then return true end
+  if AP.fullScanSellingButton then return true end
   local sellingFrame = _G.AuctionatorSellingFrame
   local buyFrame = sellingFrame and sellingFrame.BuyFrame
   local currentPrices = buyFrame and buyFrame.CurrentPrices
@@ -243,12 +232,11 @@ local function EnsureSellingButton()
   local btn = CreateButton(
     "AuctionatorPlusFullScanSellingButton", buyFrame, bg, refresh)
   btn:SetPoint("RIGHT", history, "LEFT", -BUTTON_GAP, 0)
-  FF.fullScanSellingButton = btn
+  AP.fullScanSellingButton = btn
   return true
 end
 
-function FF.FullScanButton.Ensure()
-  RegisterEvents()
+function AP.FullScanButton.Ensure()
   local shoppingReady = EnsureShoppingButton()
   local sellingReady = EnsureSellingButton()
   return shoppingReady and sellingReady

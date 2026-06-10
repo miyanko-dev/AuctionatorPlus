@@ -1,19 +1,22 @@
+local _, AP = ...
+
 local BUTTON_GAP = 2
 
 local function CreateFlipButton()
-  if FF.toggleButton then return true end
+  if AP.toggleButton then return true end
 
   local shoppingFrame = _G.AuctionatorShoppingFrame
-  local fullScanButton = FF.fullScanShoppingButton
+  local fullScanButton = AP.fullScanShoppingButton
   if not shoppingFrame or not fullScanButton then return false end
 
-  local button = CreateFrame("Button", "FlipperScanButton", shoppingFrame, "UIPanelButtonTemplate")
+  local button = CreateFrame(
+    "Button", "AuctionatorPlusArbitrageButton", shoppingFrame, "UIPanelButtonTemplate")
   button:SetSize(150, 22)
   button:SetText("Arbitrage")
   button:SetPoint("LEFT", fullScanButton, "RIGHT", BUTTON_GAP, 0)
   button:SetFrameStrata(shoppingFrame:GetFrameStrata())
   button:SetFrameLevel(shoppingFrame:GetFrameLevel() + 5)
-  button:SetScript("OnClick", FF.Panel.Toggle)
+  button:SetScript("OnClick", AP.Panel.Toggle)
   button:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     GameTooltip:SetText("Toggle Arbitrage panel")
@@ -25,16 +28,16 @@ local function CreateFlipButton()
   button:SetScript("OnLeave", GameTooltip_Hide)
   button:Show()
 
-  FF.toggleButton = button
+  AP.toggleButton = button
   return true
 end
 
 local function SetFinderButtonsShown(shown)
-  if FF.toggleButton then
-    if shown then FF.toggleButton:Show() else FF.toggleButton:Hide() end
+  if AP.toggleButton then
+    if shown then AP.toggleButton:Show() else AP.toggleButton:Hide() end
   end
-  if FF.fullScanShoppingButton then
-    if shown then FF.fullScanShoppingButton:Show() else FF.fullScanShoppingButton:Hide() end
+  if AP.fullScanShoppingButton then
+    if shown then AP.fullScanShoppingButton:Show() else AP.fullScanShoppingButton:Hide() end
   end
 end
 
@@ -44,8 +47,8 @@ local function SyncFinderButtonVisibility()
 end
 
 local function HookBuyFrameVisibility()
-  if FF.buyFrameHooked then return true end
-  if not FF.toggleButton then return false end
+  if AP.buyFrameHooked then return true end
+  if not AP.toggleButton then return false end
 
   local buyFrame = _G.AuctionatorBuyFrame
   if not buyFrame then return false end
@@ -60,16 +63,18 @@ local function HookBuyFrameVisibility()
 
   SyncFinderButtonVisibility()
 
-  FF.buyFrameHooked = true
+  AP.buyFrameHooked = true
   return true
 end
 
+-- The Auctionator frames these attach to are created on (or shortly after) the
+-- first auction-house open, so retry until every piece is in place.
 local function EnsureToggleButton(attempt)
   attempt = attempt or 1
-  local fullScanReady = FF.FullScanButton and FF.FullScanButton.Ensure()
+  local fullScanReady = AP.FullScanButton.Ensure()
   local flipReady = fullScanReady and CreateFlipButton()
   local buyHooked = flipReady and HookBuyFrameVisibility()
-  local watchReady = FF.SellingWatch and FF.SellingWatch.Ensure()
+  local watchReady = AP.SellingWatch.Ensure()
   if (fullScanReady and flipReady and buyHooked and watchReady) or attempt > 20 then return end
   C_Timer.After(0.5, function() EnsureToggleButton(attempt + 1) end)
 end
@@ -80,30 +85,16 @@ bootstrap:RegisterEvent("AUCTION_HOUSE_SHOW")
 bootstrap:RegisterEvent("AUCTION_HOUSE_CLOSED")
 bootstrap:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
-    if FF.Settings and FF.Settings.Load then FF.Settings.Load() end
-    if FF.Adapter and FF.Adapter.RegisterEventBus then
-      FF.Adapter.RegisterEventBus()
-    end
-    if FF.SellingWatch and FF.SellingWatch.Ensure then
-      FF.SellingWatch.Ensure()
-    end
-    if FF.ShoppingFilter and FF.ShoppingFilter.Hook then
-      FF.ShoppingFilter.Hook()
-    end
-    if FF.Adapter and FF.Adapter.RegisterTooltipHook and FF.Tooltip and FF.Tooltip.Apply then
-      FF.Adapter.RegisterTooltipHook(FF.Tooltip.Apply)
-    end
+    AP.LoadSettings()
+    AP.SellingWatch.Ensure()
 
   elseif event == "AUCTION_HOUSE_SHOW" then
-    FF.ahOpen = true
-    if FF.Adapter and FF.Adapter.RegisterEventBus then
-      FF.Adapter.RegisterEventBus()
-    end
+    AP.ahOpen = true
     EnsureToggleButton()
 
   elseif event == "AUCTION_HOUSE_CLOSED" then
-    FF.ahOpen = false
-    FF.Scanner.Abort()
-    if FF.panel then FF.panel:Hide() end
+    AP.ahOpen = false
+    AP.Arbitrage.Abort()
+    if AP.panel then AP.panel:Hide() end
   end
 end)

@@ -1,26 +1,18 @@
-FF.Panel = {}
+local _, AP = ...
 
-local C = FF.Constants
+AP.Panel = {}
+
+local C = AP.Constants
 local COL = C.Columns
 
-local PAD_X = 16
-local PAD_TOP = 52
-local PAD_BOTTOM = 16
+local CONTENT_PAD = 10
+local CONTENT_PAD_TOP = 30
 local SECTION_GAP = 22
 local SECTION_INNER_PAD = 12
 local SECTION_LABEL_LIFT = 7
 local ACTION_BUTTON_W = 180
 local ACTION_BUTTON_H = 24
 local ACTION_AREA_H = ACTION_BUTTON_H + 12
-
-local PANEL_BACKDROP = {
-  bgFile   = "Interface\\DialogFrame\\UI-DialogBox-Background",
-  edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-  tile     = true,
-  tileSize = 32,
-  edgeSize = 32,
-  insets   = { left = 8, right = 8, top = 8, bottom = 8 },
-}
 
 local SECTION_BACKDROP = {
   bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
@@ -31,42 +23,7 @@ local SECTION_BACKDROP = {
   insets   = { left = 3, right = 3, top = 5, bottom = 3 },
 }
 
-local function applyPanelBackdrop(frame)
-  if not frame.SetBackdrop then return end
-  frame:SetBackdrop(PANEL_BACKDROP)
-end
-
-local function buildTitleHeader(parent, text)
-  local HEADER_TEXTURE = "Interface\\DialogFrame\\UI-DialogBox-Header"
-
-  local mid = parent:CreateTexture(nil, "OVERLAY")
-  mid:SetTexture(HEADER_TEXTURE)
-  mid:SetTexCoord(0.31, 0.67, 0, 0.63)
-  mid:SetPoint("TOP", parent, "TOP", 0, 12)
-  mid:SetHeight(40)
-
-  local left = parent:CreateTexture(nil, "OVERLAY")
-  left:SetTexture(HEADER_TEXTURE)
-  left:SetTexCoord(0.21, 0.31, 0, 0.63)
-  left:SetPoint("RIGHT", mid, "LEFT")
-  left:SetWidth(30)
-  left:SetHeight(40)
-
-  local right = parent:CreateTexture(nil, "OVERLAY")
-  right:SetTexture(HEADER_TEXTURE)
-  right:SetTexCoord(0.67, 0.77, 0, 0.63)
-  right:SetPoint("LEFT", mid, "RIGHT")
-  right:SetWidth(30)
-  right:SetHeight(40)
-
-  local title = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-  title:SetPoint("TOP", mid, "TOP", 0, -14)
-  title:SetText(text)
-
-  mid:SetWidth((title:GetStringWidth() or 0) + 10)
-end
-
-local function buildSection(parent, labelText)
+local function BuildSection(parent, labelText)
   local section = CreateFrame("Frame", nil, parent, "BackdropTemplate")
   section:SetBackdrop(SECTION_BACKDROP)
   section:SetBackdropColor(0.1, 0.1, 0.1, 0.5)
@@ -138,37 +95,35 @@ local function InitRowWidgets(row)
         ChatEdit_InsertLink(self.flip.itemLink)
       end
     else
-      if FF.Adapter and FF.Adapter.OpenFlipDetails then
-        FF.Adapter.OpenFlipDetails(self.flip)
-      end
+      AP.Arbitrage.OpenFlipDetails(self.flip)
     end
   end)
 end
 
 local function UpdateRow(row, flip)
   row.flip = flip
-  row.ItemText:SetText(FF.Format.CleanItemText(flip.itemLink or flip.itemName or "?"))
+  row.ItemText:SetText(AP.Format.CleanItemText(flip.itemLink or flip.itemName or "?"))
   row.RelQty:SetText(string.format("%.0f%%", flip.relativeQuantity or 0))
   row.Underpriced:SetText(flip.underpriced and string.format("%+d%%", flip.underpriced) or "-")
   row.Vol:SetText(flip.volatilityBucket or "-")
   row.Sellers:SetText(flip.sellers and tostring(flip.sellers) or "-")
-  row.TotalCost:SetText(FF.Format.Money(flip.totalCost))
-  row.Profit:SetText(FF.Format.Money(flip.margin))
+  row.TotalCost:SetText(AP.Format.Money(flip.totalCost))
+  row.Profit:SetText(AP.Format.Money(flip.margin))
   row.ROI:SetText(string.format("%.0f%%", (flip.roi or 0) * 100))
 end
 
-local function GetAHFrame()
-  if FF.Adapter and FF.Adapter.GetAHFrame then
-    return FF.Adapter.GetAHFrame()
-  end
-  return nil
-end
+function AP.Panel.Create()
+  if AP.panel then return AP.panel end
+  if not AuctionFrame then return nil end
 
-function FF.Panel.Create()
-  if FF.panel then return FF.panel end
-  if not GetAHFrame() then return nil end
+  local panel = CreateFrame("Frame", "AuctionatorPlusArbitragePanel", UIParent, "ButtonFrameTemplate")
+  ButtonFrameTemplate_HidePortrait(panel)
+  panel:SetTitle("Arbitrage")
 
-  local panel = CreateFrame("Frame", "FlipperResultsPanel", UIParent, "BackdropTemplate")
+  -- The template reserves a streaky "attic" band between the title bar (21px)
+  -- and the inset; this panel has no attic content, so reclaim it.
+  panel.TopTileStreaks:Hide()
+  panel.Inset:SetPoint("TOPLEFT", panel, "TOPLEFT", 4, -21)
   panel:SetSize(C.PanelWidth, C.PanelHeight)
   panel:SetPoint("CENTER")
   panel:SetFrameStrata("FULLSCREEN_DIALOG")
@@ -179,17 +134,13 @@ function FF.Panel.Create()
   panel:SetScript("OnDragStart", panel.StartMoving)
   panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
   panel:Hide()
+  panel.CloseButton:SetScript("OnClick", function() panel:Hide() end)
 
-  applyPanelBackdrop(panel)
-  buildTitleHeader(panel, "Arbitrage")
-
-  local closeBtn = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
-  closeBtn:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
-  closeBtn:SetScript("OnClick", function() panel:Hide() end)
-
+  -- Section labels render above their section's top border, so the content
+  -- area leaves enough room for the first label plus a gap to the inset edge.
   local content = CreateFrame("Frame", nil, panel)
-  content:SetPoint("TOPLEFT", panel, "TOPLEFT", PAD_X, -PAD_TOP)
-  content:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -PAD_X, PAD_BOTTOM)
+  content:SetPoint("TOPLEFT", panel.Inset, "TOPLEFT", CONTENT_PAD, -CONTENT_PAD_TOP)
+  content:SetPoint("BOTTOMRIGHT", panel.Inset, "BOTTOMRIGHT", -CONTENT_PAD, CONTENT_PAD)
 
   local ROW_H = 24
   local LABEL_H = 14
@@ -218,7 +169,7 @@ function FF.Panel.Create()
   local FILTERS_BODY_H = LABEL_H + LABEL_GAP + ROW_H + MINI_HELPER_GAP + MINI_HELPER_H
   local FILTERS_SECTION_H = FILTERS_BODY_H + 2 * SECTION_INNER_PAD
 
-  panel.FiltersSection = buildSection(content, "Filters")
+  panel.FiltersSection = BuildSection(content, "Filters")
   panel.FiltersSection:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
   panel.FiltersSection:SetPoint("TOPRIGHT", content, "TOPRIGHT", 0, 0)
   panel.FiltersSection:SetHeight(FILTERS_SECTION_H)
@@ -242,7 +193,7 @@ function FF.Panel.Create()
     edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnTextChanged", function()
-      if FF.hasScanned then FF.Filters.RebuildAll() end
+      if AP.hasScanned then AP.Arbitrage.RebuildAll() end
     end)
 
     local mini = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -255,15 +206,14 @@ function FF.Panel.Create()
     mini:SetText(def.helper)
     mini:SetTextColor(0.55, 0.55, 0.55, 1)
 
-    return label, edit, mini
+    return edit
   end
 
   local filtersBody = panel.FiltersSection.body
   local colCursor = SECTION_BODY_INSET
   panel.inputs = {}
   for _, def in ipairs(FILTER_DEFS) do
-    local _, edit = CreateFilterField(filtersBody, colCursor, def)
-    panel.inputs[def.key] = edit
+    panel.inputs[def.key] = CreateFilterField(filtersBody, colCursor, def)
     colCursor = colCursor + def.width + FIELD_GAP
   end
 
@@ -273,14 +223,14 @@ function FF.Panel.Create()
   panel.ActionButton:SetText("Find Potential Flips")
   panel.ActionButton:GetFontString():SetTextColor(1, 0.82, 0)
   panel.ActionButton:SetScript("OnClick", function()
-    if FF.Scanner.scanning then
-      FF.Scanner.Abort()
+    if AP.Arbitrage.scanning then
+      AP.Arbitrage.Abort()
     else
-      FF.Scanner.Start()
+      AP.Arbitrage.Start()
     end
   end)
 
-  panel.TableSection = buildSection(content, "Potential Flips")
+  panel.TableSection = BuildSection(content, "Potential Flips")
   panel.TableSection:SetPoint("TOPLEFT", panel.FiltersSection, "BOTTOMLEFT", 0, -SECTION_GAP)
   panel.TableSection:SetPoint("TOPRIGHT", panel.FiltersSection, "BOTTOMRIGHT", 0, -SECTION_GAP)
   panel.TableSection:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, ACTION_AREA_H)
@@ -331,16 +281,14 @@ function FF.Panel.Create()
     highlight:SetAlpha(0.5)
 
     btn:SetScript("OnClick", function()
-      if FF.sortProperty == def.key then
-        FF.sortDirection = (FF.sortDirection == "asc") and "desc" or "asc"
+      if AP.sortProperty == def.key then
+        AP.sortDirection = (AP.sortDirection == "asc") and "desc" or "asc"
       else
-        FF.sortProperty = def.key
-        FF.sortDirection = def.defaultDir
+        AP.sortProperty = def.key
+        AP.sortDirection = def.defaultDir
       end
-      if FF.panel then
-        FF.panel:RefreshSortIndicators()
-        FF.panel:Render()
-      end
+      panel:RefreshSortIndicators()
+      panel:Render()
     end)
 
     btn.sortKey = def.key
@@ -353,30 +301,30 @@ function FF.Panel.Create()
     headerX = headerX + def.width + COL.Gap
   end
 
-  panel.Scroll = CreateFrame("ScrollFrame", "FlipperResultsScroll", tableBody)
+  panel.Scroll = CreateFrame("ScrollFrame", nil, tableBody)
   panel.Scroll:SetPoint("TOPLEFT", panel.HeaderRow, "BOTTOMLEFT", 0, -6)
   panel.Scroll:SetPoint("BOTTOMRIGHT", tableBody, "BOTTOMRIGHT", -SECTION_BODY_INSET - SCROLLBAR_W, 0)
   panel.Scroll:EnableMouseWheel(true)
 
   panel.Content = CreateFrame("Frame", nil, panel.Scroll)
-  panel.Content:SetSize(C.PanelWidth - 2 * PAD_X - 2 * SECTION_INNER_PAD - 2 * SECTION_BODY_INSET - SCROLLBAR_W, 1)
+  panel.Content:SetSize(1, 1)
   panel.Scroll:SetScrollChild(panel.Content)
 
-  panel.ScrollScrollBar = CreateFrame("EventFrame", "FlipperScrollBar", tableBody, "MinimalScrollBar")
-  panel.ScrollScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -4)
-  panel.ScrollScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 7)
-  panel.ScrollScrollBar:SetHideIfUnscrollable(true)
-  panel.ScrollScrollBar:Init(1, 0.25)
+  panel.ScrollBar = CreateFrame("EventFrame", nil, tableBody, "MinimalScrollBar")
+  panel.ScrollBar:SetPoint("TOPLEFT", panel.Scroll, "TOPRIGHT", 4, -4)
+  panel.ScrollBar:SetPoint("BOTTOMLEFT", panel.Scroll, "BOTTOMRIGHT", 4, 7)
+  panel.ScrollBar:SetHideIfUnscrollable(true)
+  panel.ScrollBar:Init(1, 0.25)
 
-  panel.ScrollScrollBar:RegisterCallback("OnScroll", function(_, scrollPercentage)
+  panel.ScrollBar:RegisterCallback("OnScroll", function(_, scrollPercentage)
     local range = math.max(0, panel.Content:GetHeight() - panel.Scroll:GetHeight())
     panel.Scroll:SetVerticalScroll(range * scrollPercentage)
   end, panel.Scroll)
 
   panel.Scroll:SetScript("OnMouseWheel", function(_, delta)
-    if not panel.ScrollScrollBar:HasScrollableExtent() then return end
-    local pct = panel.ScrollScrollBar:GetScrollPercentage() - delta * 0.1
-    panel.ScrollScrollBar:SetScrollPercentage(math.max(0, math.min(1, pct)))
+    if not panel.ScrollBar:HasScrollableExtent() then return end
+    local pct = panel.ScrollBar:GetScrollPercentage() - delta * 0.1
+    panel.ScrollBar:SetScrollPercentage(math.max(0, math.min(1, pct)))
   end)
 
   panel.rows = {}
@@ -400,9 +348,9 @@ function FF.Panel.Create()
 
   function panel:RefreshSortIndicators()
     for _, btn in ipairs(self.HeaderButtons) do
-      if FF.sortProperty == btn.sortKey then
+      if AP.sortProperty == btn.sortKey then
         btn.Arrow:Show()
-        if FF.sortDirection == "asc" then
+        if AP.sortDirection == "asc" then
           btn.Arrow:SetTexCoord(0, 0.5625, 0, 1)
         else
           btn.Arrow:SetTexCoord(0.5625, 1, 0, 1)
@@ -417,12 +365,12 @@ function FF.Panel.Create()
 
   function panel:Render()
     self:RefreshSortIndicators()
-    FF.Filters.SortFlips(FF.flips)
+    AP.Arbitrage.SortFlips(AP.flips)
 
-    if #FF.flips > 0 then
+    if #AP.flips > 0 then
       self.EmptyMessage:Hide()
     else
-      if FF.hasScanned then
+      if AP.hasScanned then
         self.EmptyMessage:SetText("No flips found. Try adjusting your filters or broadening your shopping list search.")
       else
         self.EmptyMessage:SetText("Run a shopping list search in Auctionator, then click Find Potential Flips.")
@@ -430,7 +378,14 @@ function FF.Panel.Create()
       self.EmptyMessage:Show()
     end
 
-    for i, flip in ipairs(FF.flips) do
+    -- The scroll child cannot be anchored to the scroll frame's width, so it
+    -- follows the laid-out width here (skipped before the first layout pass).
+    local scrollWidth = self.Scroll:GetWidth()
+    if scrollWidth and scrollWidth > 0 then
+      self.Content:SetWidth(scrollWidth)
+    end
+
+    for i, flip in ipairs(AP.flips) do
       local row = self.rows[i]
       if not row then
         row = CreateFrame("Button", nil, self.Content)
@@ -444,27 +399,27 @@ function FF.Panel.Create()
       row:Show()
     end
 
-    for i = #FF.flips + 1, #self.rows do
+    for i = #AP.flips + 1, #self.rows do
       self.rows[i]:Hide()
       self.rows[i].flip = nil
     end
 
-    local contentHeight = #FF.flips * C.RowHeight
+    local contentHeight = #AP.flips * C.RowHeight
     self.Content:SetHeight(math.max(contentHeight, 1))
 
     local viewport = self.Scroll:GetHeight()
     local visiblePct = math.min(1, viewport / math.max(contentHeight, 1))
-    self.ScrollScrollBar:SetVisibleExtentPercentage(visiblePct)
+    self.ScrollBar:SetVisibleExtentPercentage(visiblePct)
     local range = math.max(0, contentHeight - viewport)
-    self.Scroll:SetVerticalScroll(range * self.ScrollScrollBar:GetScrollPercentage())
+    self.Scroll:SetVerticalScroll(range * self.ScrollBar:GetScrollPercentage())
   end
 
-  FF.panel = panel
+  AP.panel = panel
   return panel
 end
 
-function FF.Panel.Toggle()
-  local panel = FF.panel or FF.Panel.Create()
+function AP.Panel.Toggle()
+  local panel = AP.panel or AP.Panel.Create()
   if not panel then return end
 
   if panel:IsShown() then
@@ -472,11 +427,8 @@ function FF.Panel.Toggle()
     return
   end
 
-  local ah = GetAHFrame()
-  if ah then
-    panel:ClearAllPoints()
-    panel:SetPoint("TOPLEFT", ah, "TOPRIGHT", 10, 0)
-  end
+  panel:ClearAllPoints()
+  panel:SetPoint("TOPLEFT", AuctionFrame, "TOPRIGHT", 10, 0)
   panel:Show()
   panel:Render()
 end

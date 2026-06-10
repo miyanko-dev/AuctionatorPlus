@@ -1,53 +1,105 @@
-FF = FF or {}
+local _, AP = ...
 
-FF.collected = {}
-FF.seenKeys = {}
-FF.scanned = {}
-FF.flips = {}
+-- Shopping-search results collected for the Arbitrage scan (reset per search).
+AP.collected = {}
+AP.seenKeys = {}
+AP.scanned = {}
+AP.flips = {}
 
-FF.panel = nil
-FF.toggleButton = nil
-FF.hasScanned = false
+AP.hasScanned = false
 
 -- Tracks whether the auction house is currently open (set in Bootstrap).
-FF.ahOpen = false
+AP.ahOpen = false
 
-FF.sortProperty = "roi"
-FF.sortDirection = "desc"
+AP.sortProperty = "roi"
+AP.sortDirection = "desc"
 
-FF.committedMaxQtyPct = 0
-FF.committedMaxInvest = 0
-FF.committedMinProfit = 0
-FF.committedMinROI = 0.20
+AP.committedMaxQtyPct = 0
+AP.committedMaxInvest = 0
+AP.committedMinProfit = 0
+AP.committedMinROI = 0.20
 
-FF.fullScanButton = nil
+AP.Constants = {
+  CallerID = "AuctionatorPlus",
+
+  DefaultMinROIPercent = 20,
+  MinGapPercent = 15,
+  AHCutPercent = 5,
+  DepositPercent = 5,
+  DefaultUndercutPercent = 2,
+  HistoricalMultipleCap = 3,
+  HistoryWindowDays = 30,  -- price trend only considers the last month of data
+
+  PanelWidth = 950,
+  PanelHeight = 540,
+  RowHeight = 28,
+
+  Columns = {
+    Item        = 180,
+    RelQty      = 90,
+    Underpriced = 80,
+    Vol         = 45,
+    Sellers     = 55,
+    Cost        = 95,
+    Profit      = 95,
+    ROI         = 55,
+    Gap         = 8,
+  },
+
+  Tooltip = {
+    AverageLabel = "Average Min. Buyout",
+    TrendLabel   = "Trend",
+  },
+}
 
 -- Persisted options (loaded from AuctionatorPlusDB on PLAYER_LOGIN).
-FF.Settings = {
+AP.Settings = {
   checkOtherItems = false,
   sameStats = false,
 }
 
-function FF.Settings.Load()
-  local db = _G.AuctionatorPlusDB
-  if type(db) ~= "table" then
-    db = {}
-    _G.AuctionatorPlusDB = db
+local function EnsureDB()
+  if type(AuctionatorPlusDB) ~= "table" then
+    AuctionatorPlusDB = {}
   end
+  return AuctionatorPlusDB
+end
+
+function AP.LoadSettings()
+  local db = EnsureDB()
   if type(db.checkOtherItems) == "boolean" then
-    FF.Settings.checkOtherItems = db.checkOtherItems
+    AP.Settings.checkOtherItems = db.checkOtherItems
   end
   if type(db.sameStats) == "boolean" then
-    FF.Settings.sameStats = db.sameStats
+    AP.Settings.sameStats = db.sameStats
   end
 end
 
-function FF.Settings.Save()
-  local db = _G.AuctionatorPlusDB
-  if type(db) ~= "table" then
-    db = {}
-    _G.AuctionatorPlusDB = db
+function AP.SaveSettings()
+  local db = EnsureDB()
+  db.checkOtherItems = AP.Settings.checkOtherItems
+  db.sameStats = AP.Settings.sameStats
+end
+
+AP.Format = {}
+
+function AP.Format.StripItemColor(name)
+  if not name then return "" end
+  name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  return name:lower()
+end
+
+function AP.Format.CleanItemText(text)
+  if not text then return "?" end
+  text = text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+  text = text:gsub("|T[^|]+|t", "")
+  text = text:gsub("|H[^|]+|h", ""):gsub("|h", "")
+  return strtrim(text)
+end
+
+function AP.Format.Money(copper)
+  if not copper or copper <= 0 then
+    return "0g"
   end
-  db.checkOtherItems = FF.Settings.checkOtherItems
-  db.sameStats = FF.Settings.sameStats
+  return Auctionator.Utilities.CreatePaddedMoneyString(copper)
 end
