@@ -6,6 +6,7 @@ local BUTTON_LABEL = "Full Scan"
 local BUTTON_WIDTH = 110
 local BUTTON_HEIGHT = 22
 local BUTTON_GAP = 2
+local TOOLTIP_GAP = 4
 local FINAL_HOLD_SECONDS = 2
 local FADE_DURATION = 0.2
 
@@ -99,7 +100,9 @@ local function ShowProgressOnButton(button, text, color)
   if not button then return end
   local tt = EnsureProgressTooltip()
   if tt:GetOwner() ~= button then
-    tt:SetOwner(button, "ANCHOR_TOP")
+    tt:SetOwner(button, "ANCHOR_NONE")
+    tt:ClearAllPoints()
+    tt:SetPoint("BOTTOM", button, "TOP", 0, TOOLTIP_GAP)
   end
   ApplyTooltipWidth(tt, button)
   tt:SetText(text, color[1], color[2], color[3])

@@ -8,14 +8,14 @@
 ## SavedVariablesPerCharacter: AuctionatorPlusDB
 ## IconTexture: 132112
 
-Core\Init.lua
-Core\Bridge.lua
-Core\StatScan.lua
-Core\PriceHistory.lua
-Core\TrendColumn.lua
-Core\Arbitrage.lua
-Core\ArbitragePanel.lua
-Core\SellingWatch.lua
-Core\ShoppingFilter.lua
-Core\FullScanButton.lua
-Core\Bootstrap.lua
+Modules\Init.lua
+Modules\Bridge.lua
+Modules\StatScan.lua
+Modules\PriceHistory.lua
+Modules\TrendColumn.lua
+Modules\Arbitrage.lua
+Modules\ArbitragePanel.lua
+Modules\SellingWatch.lua
+Modules\ShoppingFilter.lua
+Modules\FullScanButton.lua
+Modules\Bootstrap.lua
