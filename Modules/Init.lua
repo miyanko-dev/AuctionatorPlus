@@ -28,7 +28,7 @@ AP.Constants = {
   DepositPercent = 5,
   DefaultUndercutPercent = 2,
   HistoricalMultipleCap = 3,
-  HistoryWindowDays = 30,  -- price trend only considers the last month of data
+  HistoryWindowDays = 21,  -- matches Auctionator's default price-history retention
 
   PanelWidth = 950,
   PanelHeight = 540,
