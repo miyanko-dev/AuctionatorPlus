@@ -7,7 +7,7 @@ AP.Tooltip = {}
 -- ===== Price-history statistics =====
 
 local function VolatilityBucket(cv, sampleCount)
-  if not cv or sampleCount < 3 then return nil end
+  if sampleCount < 3 then return nil end
   if cv < 0.10 then return "Low" end
   if cv < 0.25 then return "Med" end
   return "High"
@@ -32,7 +32,7 @@ function AP.History.Compute(dbKey)
   local minSum = 0
   for _, entry in ipairs(history) do
     local day = tonumber(entry.rawDay)
-    local withinWindow = not day or day >= cutoffDay
+    local withinWindow = not day or day > cutoffDay
     local minSeen = tonumber(entry.minSeen)
     if withinWindow and minSeen and minSeen > 0 then
       recent[#recent + 1] = minSeen
@@ -53,7 +53,6 @@ function AP.History.Compute(dbKey)
   local cv = mean > 0 and (stdev / mean) or 0
 
   return {
-    sampleCount      = minCount,
     averageMinBuyout = math.floor(mean + 0.5),
     volatility       = cv,
     volatilityBucket = VolatilityBucket(cv, minCount),
