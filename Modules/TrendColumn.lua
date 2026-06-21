@@ -4,14 +4,12 @@ local TREND_HEADER     = "Trend"
 local TREND_TEXT_FIELD = "auctionatorPlusTrendText"  -- coloured string (display)
 local TREND_SORT_FIELD = "auctionatorPlusTrendValue" -- number (sort + CSV)
 
--- Shopping results have a wide listing; the buy-auctions listing (selling
--- current prices, shopping browse) is narrower, so its column is slimmer and we
--- reclaim space from its oversized "Available" column (a stack count needs far
--- less than 120px) to keep the adjacent fill "You?" column readable.
-local SHOPPING_WIDTH  = 70
-local BUY_WIDTH       = 56
-local AVAILABLE_FIELD = "availablePretty"
-local AVAILABLE_WIDTH = 70
+-- Trend column width per listing. The shopping results listing is wide, so its
+-- trend column simply shrinks the flexible name column. The buy-auctions listing
+-- (selling current prices, shopping browse) is narrow, so its trend column is
+-- funded by dropping Auctionator's low-value "You?" column (see WrapLayout call).
+local SHOPPING_TREND_WIDTH = 70
+local BUY_TREND_WIDTH      = 45
 
 local function SetTrendFields(entry, currentPrice, mode)
   local average = AP.Trend.AverageFor(entry.itemLink)
@@ -26,24 +24,28 @@ local function SetTrendFields(entry, currentPrice, mode)
 end
 
 -- Append the trend column to a provider's layout, once, caching the merged
--- layout on the instance so repeat GetTableLayout calls stay stable. When
--- narrowField is given, the existing column carrying that cellParameter is
--- shrunk to narrowWidth via a private copy, leaving Auctionator's shared layout
--- untouched, to free room for the trend column.
-local function WrapLayout(mixin, width, narrowField, narrowWidth)
+-- layout on the instance so repeat GetTableLayout calls stay stable. Opts, keyed
+-- by a column's cell field, reshape Auctionator's columns via private copies so
+-- its shared layout stays untouched: opts.drop omits a column, opts.flex clears
+-- a column's fixed width so it stretches to fill the freed space.
+local function WrapLayout(mixin, width, opts)
+  local drop = opts and opts.drop
+  local flex = opts and opts.flex
   local original = mixin.GetTableLayout
   mixin.GetTableLayout = function(self)
     if not self.auctionatorPlusLayout then
       local merged = {}
-      for index, column in ipairs(original(self)) do
-        if narrowField and column.cellParameters
-            and column.cellParameters[1] == narrowField then
-          local resized = {}
-          for key, value in pairs(column) do resized[key] = value end
-          resized.width = narrowWidth
-          merged[index] = resized
-        else
-          merged[index] = column
+      for _, column in ipairs(original(self)) do
+        local field = column.cellParameters and column.cellParameters[1]
+        if not (field and drop and drop[field]) then
+          if field and flex and flex[field] then
+            local resized = {}
+            for key, value in pairs(column) do resized[key] = value end
+            resized.width = nil
+            merged[#merged + 1] = resized
+          else
+            merged[#merged + 1] = column
+          end
         end
       end
       merged[#merged + 1] = {
@@ -115,10 +117,16 @@ end
 
 -- Auctionator is a hard dependency, so its provider mixins exist at load time;
 -- the AH frames that copy them are created later (on first open).
-WrapLayout(AuctionatorShoppingTabDataProviderMixin, SHOPPING_WIDTH)
+WrapLayout(AuctionatorShoppingTabDataProviderMixin, SHOPPING_TREND_WIDTH)
 WrapSort(AuctionatorShoppingTabDataProviderMixin)
 hooksecurefunc(AuctionatorShoppingTabDataProviderMixin, "AddDetails", DecorateShopping)
 
-WrapLayout(AuctionatorBuyAuctionsDataProviderMixin, BUY_WIDTH, AVAILABLE_FIELD, AVAILABLE_WIDTH)
+-- Drop the "You?" column (just a "Yes" flag on your own auctions) to fund the
+-- trend column, so unit/stack price keep Auctionator's native 145px and large
+-- prices are not clipped. "Available" then flexes to absorb the freed width.
+WrapLayout(AuctionatorBuyAuctionsDataProviderMixin, BUY_TREND_WIDTH, {
+  drop = { isOwnedText = true },
+  flex = { availablePretty = true },
+})
 WrapSort(AuctionatorBuyAuctionsDataProviderMixin)
 hooksecurefunc(AuctionatorBuyAuctionsDataProviderMixin, "PopulateAuctions", DecorateBuyAuctions)
