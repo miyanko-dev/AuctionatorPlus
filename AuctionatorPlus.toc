@@ -1,7 +1,7 @@
 ## Interface: 11508
 ## Title: Auctionator Plus
 ## Category: Auctions
-## Notes: Companion add-on for Auctionator. Adds price-history tooltips, a stat-finder panel, and a flip-finder panel to the Auction House.
+## Notes: Companion add-on for Auctionator. Adds price-history tooltips, trend columns, and similar-item selling comparisons to the Auction House.
 ## Author: MIYANKO
 ## Version: 2.0.0
 ## Dependencies: Auctionator
@@ -13,8 +13,6 @@ Modules\Bridge.lua
 Modules\StatScan.lua
 Modules\PriceHistory.lua
 Modules\TrendColumn.lua
-Modules\Arbitrage.lua
-Modules\ArbitragePanel.lua
 Modules\SellingWatch.lua
 Modules\ShoppingFilter.lua
 Modules\FullScanButton.lua

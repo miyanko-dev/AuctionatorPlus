@@ -12,7 +12,10 @@ local SHOPPING_TREND_WIDTH = 70
 local BUY_TREND_WIDTH      = 45
 
 local function SetTrendFields(entry, currentPrice, mode)
-  local average = AP.Trend.AverageFor(entry.itemLink)
+  -- Shopping entries only get itemLink once their item info has loaded; the
+  -- itemString they carry from the start resolves the price history just as
+  -- well (gear falls back to its base-item history until the link arrives).
+  local average = AP.Trend.AverageFor(entry.itemLink or entry.itemString)
   local pct = AP.Trend.Percent(currentPrice, average)
   if pct == nil then
     entry[TREND_SORT_FIELD] = nil
@@ -120,6 +123,13 @@ end
 WrapLayout(AuctionatorShoppingTabDataProviderMixin, SHOPPING_TREND_WIDTH)
 WrapSort(AuctionatorShoppingTabDataProviderMixin)
 hooksecurefunc(AuctionatorShoppingTabDataProviderMixin, "AddDetails", DecorateShopping)
+
+-- Once an entry's item info loads, Auctionator fills in its itemLink and
+-- repaints (ProcessItemString); re-decorating there refines the trend with the
+-- full link — for suffixed gear the itemString only reaches the base item.
+hooksecurefunc(AuctionatorShoppingTabDataProviderMixin, "ProcessItemString", function(_, entry)
+  SetTrendFields(entry, entry.minPrice, AP.Trend.UP_RED)
+end)
 
 -- Drop the "You?" column (just a "Yes" flag on your own auctions) to fund the
 -- trend column, so unit/stack price keep Auctionator's native 145px and large

@@ -59,6 +59,23 @@ function AP.History.Compute(dbKey)
   }
 end
 
+-- Stats for the first of the link's db keys with usable history, so suffixed
+-- gear is measured against its own suffix market before the pooled base item.
+-- This matches the key preference of Auctionator's price lookups, keeping the
+-- trend's current price and average on the same price series.
+function AP.History.ComputeForLink(itemLink)
+  local dbKeys = AP.Bridge.DBKeysForLink(itemLink)
+  if not dbKeys then return nil end
+
+  for _, dbKey in ipairs(dbKeys) do
+    local stats = AP.History.Compute(dbKey)
+    if stats and stats.averageMinBuyout and stats.averageMinBuyout > 0 then
+      return stats
+    end
+  end
+  return nil
+end
+
 -- ===== Trend percentage =====
 
 -- Colour modes for a trend percentage.
@@ -77,14 +94,8 @@ end
 -- Historical average min buyout for an item link, via Auctionator's price
 -- database. nil when there is no usable history.
 function AP.Trend.AverageFor(itemLink)
-  local dbKey = AP.Bridge.DBKeyForLink(itemLink)
-  if not dbKey then return nil end
-
-  local stats = AP.History.Compute(dbKey)
-  if not stats or not stats.averageMinBuyout or stats.averageMinBuyout <= 0 then
-    return nil
-  end
-  return stats.averageMinBuyout
+  local stats = AP.History.ComputeForLink(itemLink)
+  return stats and stats.averageMinBuyout
 end
 
 -- "+N%" / "-N%" / "0%" wrapped in the colour dictated by mode. A nil pct yields
@@ -133,13 +144,8 @@ end
 function AP.Tooltip.Apply(tooltip, itemLink)
   if not tooltip or not itemLink then return end
 
-  local dbKey = AP.Bridge.DBKeyForLink(itemLink)
-  if not dbKey then return end
-
-  local stats = AP.History.Compute(dbKey)
-  if not stats or not stats.averageMinBuyout or stats.averageMinBuyout <= 0 then
-    return
-  end
+  local stats = AP.History.ComputeForLink(itemLink)
+  if not stats then return end
 
   local cfg = AP.Constants.Tooltip
   tooltip:AddDoubleLine(

@@ -15,19 +15,29 @@ function AP.Bridge.DBKeyForLink(itemLink)
   return key
 end
 
+-- Price-database keys for an item link, most specific first (gear suffix key,
+-- then base item id); nil when the link is unusable. The callback is immediate
+-- on the legacy AH client; the basic key covers a deferred one, mirroring
+-- Auctionator's own API fallback.
+function AP.Bridge.DBKeysForLink(itemLink)
+  if not itemLink then return nil end
+
+  local keys = nil
+  pcall(Auctionator.Utilities.DBKeyFromLink, itemLink, function(result)
+    keys = result
+  end)
+  if type(keys) == "table" and #keys > 0 then return keys end
+
+  local basicKey = AP.Bridge.DBKeyForLink(itemLink)
+  if basicKey then return { basicKey } end
+  return nil
+end
+
 -- Historical auction price from Auctionator's database; nil when unknown.
 function AP.Bridge.AuctionPrice(itemLink)
   if not itemLink then return nil end
   local ok, price = pcall(Auctionator.API.v1.GetAuctionPriceByItemLink, CallerID, itemLink)
   if ok and type(price) == "number" and price > 0 then return price end
-  return nil
-end
-
--- Days since the item was last seen at the auction house; nil when unknown.
-function AP.Bridge.AuctionAge(itemLink)
-  if not itemLink then return nil end
-  local ok, age = pcall(Auctionator.API.v1.GetAuctionAgeByItemLink, CallerID, itemLink)
-  if ok and type(age) == "number" and age >= 0 then return age end
   return nil
 end
 
