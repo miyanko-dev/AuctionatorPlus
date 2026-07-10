@@ -16,4 +16,6 @@ Modules\TrendColumn.lua
 Modules\SellingWatch.lua
 Modules\ShoppingFilter.lua
 Modules\FullScanButton.lua
+Modules\TSMFeed.lua
+Modules\TSMTrend.lua
 Modules\Bootstrap.lua

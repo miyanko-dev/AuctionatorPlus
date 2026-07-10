@@ -35,11 +35,59 @@ local watch = {
   scanning = false,
   scanEntries = nil,
   scanToken = nil,
+  trackedLink = nil,  -- sale-slot item driving the checkbox state
+  saleIsGear = false,
+  saleHasStats = false,
 }
 local scanListener
 
 local function IsSupportedGear(equipLoc)
   return type(equipLoc) == "string" and NON_GEAR_SLOTS[equipLoc] ~= true
+end
+
+-- The pair only acts on a supported piece of gear in the sale slot, and Same
+-- Stats additionally needs the item to carry a primary stat; grey them out
+-- otherwise (Same Stats also keeps requiring Check Similar Items to be on).
+local function UpdateCheckboxState()
+  local check, sameStats = AP.checkOtherItemsButton, AP.sameStatsButton
+  if not check then return end
+
+  if watch.saleIsGear then
+    check:Enable()
+    check.apLabel:SetFontObject("GameFontNormalSmall")
+  else
+    check:Disable()
+    check.apLabel:SetFontObject("GameFontDisableSmall")
+  end
+
+  if watch.saleIsGear and watch.saleHasStats and AP.Settings.checkOtherItems then
+    sameStats:Enable()
+    sameStats.apLabel:SetFontObject("GameFontNormalSmall")
+  else
+    sameStats:Disable()
+    sameStats.apLabel:SetFontObject("GameFontDisableSmall")
+  end
+end
+
+-- Track what sits in the sale slot; equip location and stats are only readable
+-- once the item data is cached, so the state settles in the load callback.
+local function TrackSaleItem(itemLink)
+  if itemLink == watch.trackedLink then return end
+  watch.trackedLink = itemLink
+  watch.saleIsGear = false
+  watch.saleHasStats = false
+  UpdateCheckboxState()
+
+  local item = itemLink and Item:CreateFromItemLink(itemLink)
+  if not item or item:IsItemEmpty() then return end
+  item:ContinueOnItemLoad(function()
+    if watch.trackedLink ~= itemLink then return end
+    local equipLoc = AP.StatScan.GetEquipInfo(itemLink)
+    watch.saleIsGear = IsSupportedGear(equipLoc)
+    local statSet = AP.StatScan.PrimaryStatSet(AP.StatScan.ReadItemText(itemLink))
+    watch.saleHasStats = next(statSet) ~= nil
+    UpdateCheckboxState()
+  end)
 end
 
 -- Weapons compare by weapon type only (restricted server-side via the category);
@@ -262,9 +310,10 @@ local function ReceiveEvent(_, eventName, eventData, arg3)
   local AH = Auctionator.AH.Events
 
   if eventName == Selling.StartFakeBuyLoading then
-    if not AP.Settings.checkOtherItems then return end
     local link = eventData and eventData.itemLink
     if not link then return end
+    TrackSaleItem(link)
+    if not AP.Settings.checkOtherItems then return end
     -- Skip the rapid repeat fires for the item we just handled; a later re-drop
     -- still re-runs so the comparables stay up to date.
     if link == watch.lastLink and watch.lastProcessAt
@@ -277,6 +326,7 @@ local function ReceiveEvent(_, eventName, eventData, arg3)
     watch.token = watch.token + 1
     watch.lastLink = nil
     watch.pending = nil
+    TrackSaleItem(nil)
     StopScan()
 
   elseif eventName == Buying.ViewSetup then
@@ -327,10 +377,19 @@ local function EnsureCheckbox()
   local anchor = sellingFrame and (sellingFrame.BagInset or sellingFrame)
   if not sellingFrame or not anchor then return false end
 
+  -- Two stacked rows must fit the ~37px strip between the sale-item frame and
+  -- the bag inset, so these boxes are compact (18px) rather than the usual 24.
+  -- This pair forms the right column, top-aligned beside the Use TSM Trend box
+  -- (left column) when that feature is present; TSMTrend.lua re-anchors it if
+  -- it creates its box after this one.
   local check = CreateFrame(
     "CheckButton", "AuctionatorPlusCheckSimilarItems", sellingFrame, "UICheckButtonTemplate")
-  check:SetSize(24, 24)
-  check:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 4, 3)
+  check:SetSize(18, 18)
+  if AP.tsmTrendSellingLabel then
+    check:SetPoint("LEFT", AP.tsmTrendSellingLabel, "RIGHT", 12, 0)
+  else
+    check:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 4, 20)
+  end
   check:SetChecked(AP.Settings.checkOtherItems)
 
   local label = check:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -341,35 +400,32 @@ local function EnsureCheckbox()
   -- Only meaningful while similar items are shown, so it tracks the box above.
   local sameStats = CreateFrame(
     "CheckButton", "AuctionatorPlusSameStats", sellingFrame, "UICheckButtonTemplate")
-  sameStats:SetSize(24, 24)
-  sameStats:SetPoint("LEFT", label, "RIGHT", 12, 0)
+  sameStats:SetSize(18, 18)
+  sameStats:SetPoint("TOPLEFT", check, "BOTTOMLEFT", 0, 0)
   sameStats:SetChecked(AP.Settings.sameStats)
 
   local sameStatsLabel = sameStats:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   sameStatsLabel:SetPoint("LEFT", sameStats, "RIGHT", 2, 0)
   sameStatsLabel:SetText("Same Stats")
 
-  local function UpdateSameStatsEnabled()
-    if AP.Settings.checkOtherItems then
-      sameStats:Enable()
-      sameStatsLabel:SetFontObject("GameFontNormalSmall")
-    else
-      sameStats:Disable()
-      sameStatsLabel:SetFontObject("GameFontDisableSmall")
-    end
-  end
+  check.apLabel = label
+  sameStats.apLabel = sameStatsLabel
 
   check:SetScript("OnClick", function(self)
     AP.Settings.checkOtherItems = self:GetChecked() and true or false
     AP.SaveSettings()
-    UpdateSameStatsEnabled()
+    UpdateCheckboxState()
   end)
+  check:SetMotionScriptsWhileDisabled(true)
   check:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Check Similar Items")
     GameTooltip:AddLine(
       "When a gear item is placed for sale, also list other auctions of the same slot, armor type, and required level (+/-2) in the current prices panel.",
       1, 1, 1, true)
+    if not watch.saleIsGear then
+      GameTooltip:AddLine("Enabled while a piece of gear sits in the sale slot.", 0.7, 0.7, 0.7, true)
+    end
     GameTooltip:Show()
   end)
   check:SetScript("OnLeave", GameTooltip_Hide)
@@ -378,20 +434,24 @@ local function EnsureCheckbox()
     AP.Settings.sameStats = self:GetChecked() and true or false
     AP.SaveSettings()
   end)
+  sameStats:SetMotionScriptsWhileDisabled(true)
   sameStats:SetScript("OnEnter", function(self)
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Same Stats")
     GameTooltip:AddLine(
       "Only list similar items that carry the same stats as the item being sold (e.g. Agility and Stamina). Stat values are ignored.",
       1, 1, 1, true)
+    if not (watch.saleIsGear and watch.saleHasStats) then
+      GameTooltip:AddLine("Enabled while gear with primary stats sits in the sale slot, with Check Similar Items on.", 0.7, 0.7, 0.7, true)
+    end
     GameTooltip:Show()
   end)
   sameStats:SetScript("OnLeave", GameTooltip_Hide)
 
-  UpdateSameStatsEnabled()
-
   AP.checkOtherItemsButton = check
   AP.sameStatsButton = sameStats
+
+  UpdateCheckboxState()
 
   return true
 end
