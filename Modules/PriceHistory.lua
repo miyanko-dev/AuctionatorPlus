@@ -104,6 +104,7 @@ function AP.History.Compute(dbKey)
     volatility       = cv,
     volatilityBucket = VolatilityBucket(cv, minCount),
     dayCount         = minCount,
+    -- Band the daily floor moved in; feeds the flip verdict, not displayed
     rangeMin         = rangeMin,
     rangeMax         = rangeMax,
   }
@@ -212,9 +213,15 @@ function AP.Tooltip.Apply(tooltip, itemLink)
       tooltip:AddDoubleLine(cfg.TrendLabel, trendText)
     end
 
-    tooltip:AddDoubleLine("Floor Range", WHITE_FONT_COLOR:WrapTextInColorCode(
-      AP.Format.Money(stats.rangeMin) .. " - " .. AP.Format.Money(stats.rangeMax)))
-    tooltip:AddDoubleLine("Scan Days", WHITE_FONT_COLOR:WrapTextInColorCode(
+    -- Few sampled days make the average and trend unreliable; colour-code the
+    -- sample size so a weak basis is visible at a glance.
+    local daysColor = WHITE_FONT_COLOR
+    if stats.dayCount < 5 then
+      daysColor = RED_FONT_COLOR
+    elseif stats.dayCount < 10 then
+      daysColor = ORANGE_FONT_COLOR
+    end
+    tooltip:AddDoubleLine("Scan Days", daysColor:WrapTextInColorCode(
       stats.dayCount .. " of " .. AP.Constants.HistoryWindowDays))
   end
 
