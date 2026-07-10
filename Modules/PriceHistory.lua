@@ -13,6 +13,45 @@ local function VolatilityBucket(cv, sampleCount)
   return "High"
 end
 
+local MAD_SCALE          = 1.4826 -- scales MAD to match a standard deviation
+local OUTLIER_CUTOFF     = 3      -- drop days beyond this many scaled MADs
+local MIN_FILTER_SAMPLES = 4      -- fewer days cannot tell an outlier apart
+local MAD_FLOOR_PCT      = 0.05   -- flat markets keep ordinary wiggle
+
+local function Median(sorted)
+  local count = #sorted
+  local mid = math.floor(count / 2)
+  if count % 2 == 0 then
+    return (sorted[mid] + sorted[mid + 1]) / 2
+  end
+  return sorted[mid + 1]
+end
+
+-- Daily minimums that survive a median/MAD outlier filter. The median anchors
+-- the filter because one freak day (a single 300% listing) cannot move it,
+-- unlike a mean/stdev cutoff where the outlier inflates its own yardstick.
+local function FilterOutliers(prices)
+  if #prices < MIN_FILTER_SAMPLES then return prices end
+
+  table.sort(prices)
+  local median = Median(prices)
+
+  local deviations = {}
+  for index, price in ipairs(prices) do
+    deviations[index] = math.abs(price - median)
+  end
+  table.sort(deviations)
+  local mad = math.max(Median(deviations) * MAD_SCALE, median * MAD_FLOOR_PCT)
+
+  local kept = {}
+  for _, price in ipairs(prices) do
+    if math.abs(price - median) <= OUTLIER_CUTOFF * mad then
+      kept[#kept + 1] = price
+    end
+  end
+  return kept
+end
+
 -- Day index Auctionator records for "today" (days since SCAN_DAY_0), matching
 -- the rawDay on each history entry.
 local function CurrentScanDay()
@@ -29,23 +68,28 @@ function AP.History.Compute(dbKey)
   local cutoffDay = CurrentScanDay() - AP.Constants.HistoryWindowDays
 
   local recent = {}
-  local minSum = 0
   for _, entry in ipairs(history) do
     local day = tonumber(entry.rawDay)
     local withinWindow = not day or day > cutoffDay
     local minSeen = tonumber(entry.minSeen)
     if withinWindow and minSeen and minSeen > 0 then
       recent[#recent + 1] = minSeen
-      minSum = minSum + minSeen
     end
   end
 
-  local minCount = #recent
-  if minCount == 0 then return nil end
+  if #recent == 0 then return nil end
 
+  local kept = FilterOutliers(recent)
+  local minCount = #kept
+
+  local minSum = 0
+  for _, minSeen in ipairs(kept) do
+    minSum = minSum + minSeen
+  end
   local mean = minSum / minCount
+
   local sqSum = 0
-  for _, minSeen in ipairs(recent) do
+  for _, minSeen in ipairs(kept) do
     local diff = minSeen - mean
     sqSum = sqSum + diff * diff
   end
