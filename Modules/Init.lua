@@ -9,7 +9,7 @@ AP.Constants = {
   HistoryWindowDays = 21,  -- matches Auctionator's default price-history retention
 
   Tooltip = {
-    AverageLabel = "Average Min. Buyout",
+    AverageLabel = "Avg. Buyout",
     TrendLabel   = "Trend",
   },
 }

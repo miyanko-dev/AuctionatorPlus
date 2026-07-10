@@ -140,29 +140,3 @@ WrapLayout(AuctionatorBuyAuctionsDataProviderMixin, BUY_TREND_WIDTH, {
 })
 WrapSort(AuctionatorBuyAuctionsDataProviderMixin)
 hooksecurefunc(AuctionatorBuyAuctionsDataProviderMixin, "PopulateAuctions", DecorateBuyAuctions)
-
--- Re-derive the trend fields of everything currently listed and repaint; used
--- by TSMTrend.lua when the trend baseline source toggles.
-function AP.RepaintTrendColumns()
-  local shoppingFrame = _G.AuctionatorShoppingFrame
-  local shoppingProvider = shoppingFrame and shoppingFrame.DataProvider
-  if shoppingProvider and type(shoppingProvider.results) == "table" then
-    DecorateShopping(shoppingProvider, shoppingProvider.results)
-    shoppingProvider:SetDirty()
-  end
-
-  local buyFrames = {}
-  if _G.AuctionatorSellingFrame and _G.AuctionatorSellingFrame.BuyFrame then
-    table.insert(buyFrames, _G.AuctionatorSellingFrame.BuyFrame)
-  end
-  if _G.AuctionatorBuyFrame then
-    table.insert(buyFrames, _G.AuctionatorBuyFrame)
-  end
-  for _, buyFrame in ipairs(buyFrames) do
-    local provider = buyFrame.CurrentPrices and buyFrame.CurrentPrices.SearchDataProvider
-    if provider and type(provider.currentResults) == "table" then
-      DecorateBuyAuctions(provider)
-      provider:SetDirty()
-    end
-  end
-end

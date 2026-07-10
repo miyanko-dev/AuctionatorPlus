@@ -377,19 +377,10 @@ local function EnsureCheckbox()
   local anchor = sellingFrame and (sellingFrame.BagInset or sellingFrame)
   if not sellingFrame or not anchor then return false end
 
-  -- Two stacked rows must fit the ~37px strip between the sale-item frame and
-  -- the bag inset, so these boxes are compact (18px) rather than the usual 24.
-  -- This pair forms the right column, top-aligned beside the Use TSM Trend box
-  -- (left column) when that feature is present; TSMTrend.lua re-anchors it if
-  -- it creates its box after this one.
   local check = CreateFrame(
     "CheckButton", "AuctionatorPlusCheckSimilarItems", sellingFrame, "UICheckButtonTemplate")
-  check:SetSize(18, 18)
-  if AP.tsmTrendSellingLabel then
-    check:SetPoint("LEFT", AP.tsmTrendSellingLabel, "RIGHT", 12, 0)
-  else
-    check:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 4, 20)
-  end
+  check:SetSize(24, 24)
+  check:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 4, 3)
   check:SetChecked(AP.Settings.checkOtherItems)
 
   local label = check:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -400,8 +391,8 @@ local function EnsureCheckbox()
   -- Only meaningful while similar items are shown, so it tracks the box above.
   local sameStats = CreateFrame(
     "CheckButton", "AuctionatorPlusSameStats", sellingFrame, "UICheckButtonTemplate")
-  sameStats:SetSize(18, 18)
-  sameStats:SetPoint("TOPLEFT", check, "BOTTOMLEFT", 0, 0)
+  sameStats:SetSize(24, 24)
+  sameStats:SetPoint("LEFT", label, "RIGHT", 12, 0)
   sameStats:SetChecked(AP.Settings.sameStats)
 
   local sameStatsLabel = sameStats:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")

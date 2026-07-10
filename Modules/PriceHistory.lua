@@ -83,8 +83,11 @@ function AP.History.Compute(dbKey)
   local minCount = #kept
 
   local minSum = 0
+  local rangeMin, rangeMax = kept[1], kept[1]
   for _, minSeen in ipairs(kept) do
     minSum = minSum + minSeen
+    if minSeen < rangeMin then rangeMin = minSeen end
+    if minSeen > rangeMax then rangeMax = minSeen end
   end
   local mean = minSum / minCount
 
@@ -100,6 +103,9 @@ function AP.History.Compute(dbKey)
     averageMinBuyout = math.floor(mean + 0.5),
     volatility       = cv,
     volatilityBucket = VolatilityBucket(cv, minCount),
+    dayCount         = minCount,
+    rangeMin         = rangeMin,
+    rangeMax         = rangeMax,
   }
 end
 
@@ -168,8 +174,9 @@ end
 -- the native Browse/Auctions tabs treat price increases as good (green); the
 -- shopping/browse tab reverses it (increases red). Any other view shows the
 -- trend without a verdict (white). Uses IsVisible so a deselected Auctionator
--- tab (its wrapper hidden) does not register as active.
-local function TrendMode()
+-- tab (its wrapper hidden) does not register as active. Shared with the TSM
+-- tooltip lines in TSMTrend.lua.
+function AP.Tooltip.TrendMode()
   if _G.AuctionatorShoppingFrame and _G.AuctionatorShoppingFrame:IsVisible() then
     return AP.Trend.UP_RED
   end
@@ -196,14 +203,19 @@ function AP.Tooltip.Apply(tooltip, itemLink)
     cfg.AverageLabel,
     WHITE_FONT_COLOR:WrapTextInColorCode(AP.Format.Money(stats.averageMinBuyout)))
 
-  -- The trend percentage is only meaningful at the auction house, so it shows
-  -- only while the AH is open and is coloured for the active view.
+  -- Trend, floor range, and sample size are buy/sell decision context, so
+  -- they show only while the auction house is open.
   if AP.ahOpen then
     local pct = AP.Trend.Percent(AP.Bridge.AuctionPrice(itemLink), stats.averageMinBuyout)
-    local trendText = AP.Trend.Colorize(pct, TrendMode())
+    local trendText = AP.Trend.Colorize(pct, AP.Tooltip.TrendMode())
     if trendText then
       tooltip:AddDoubleLine(cfg.TrendLabel, trendText)
     end
+
+    tooltip:AddDoubleLine("Floor Range", WHITE_FONT_COLOR:WrapTextInColorCode(
+      AP.Format.Money(stats.rangeMin) .. " - " .. AP.Format.Money(stats.rangeMax)))
+    tooltip:AddDoubleLine("Scan Days", WHITE_FONT_COLOR:WrapTextInColorCode(
+      stats.dayCount .. " of " .. AP.Constants.HistoryWindowDays))
   end
 
   -- Trigger a resize so newly added lines render inside the tooltip frame.

@@ -3,25 +3,19 @@ local _, AP = ...
 -- Market data from the TSM desktop application, captured on the way into the
 -- game. The app rewrites TradeSkillMaster_AppHelper/AppData.lua, which calls
 -- the global TSM_APPHELPER_LOAD_DATA while addons load; this module wraps that
--- global (forwarding to TSM untouched), decodes the current realm's payloads,
--- and offers them as market values plus an optional import into Auctionator's
--- price database. Delete this file and TSMTrend.lua (plus their .toc lines) to
--- revoke the feature; neither Auctionator nor TSM is modified.
+-- global (forwarding to TSM untouched) and decodes the current realm's payloads
+-- into per-item market values for the tooltip. Delete this file and
+-- TSMTrend.lua (plus their .toc lines) to revoke the feature; neither
+-- Auctionator nor TSM is modified.
 AP.TSMFeed = {}
 
 local DATA_TAG = "AUCTIONDB_NON_COMMODITY_DATA"
 local STAT_TAG = "AUCTIONDB_NON_COMMODITY_SCAN_STAT"
 
--- Per-character opt-ins, persisted in AuctionatorPlusDB by this module alone.
-AP.TSMFeed.Settings = {
-  useTrend = false,     -- trend columns compare against TSM market value
-  importScans = false,  -- login merges the TSM snapshot into the price database
-}
-
 local captured = {}  -- raw payload strings per tag, current realm only
 local feed = {
   marketValue = nil,   -- [dbKey] = smoothed market value (copper)
-  snapshot = nil,      -- [dbKey] = { minBuyout, numAuctions }
+  recent = nil,        -- [dbKey] = recent market value, fallback source
   downloadTime = nil,  -- unix time the app downloaded the snapshot
 }
 
@@ -123,20 +117,18 @@ end
 
 local function DecodeCaptured()
   if captured[DATA_TAG] then
-    local snapshot = {}
+    local recent = {}
     local downloadTime, fields = DecodeRows(captured[DATA_TAG], function(dbKey, values)
-      snapshot[dbKey] = values
+      recent[dbKey] = values
     end)
-    if downloadTime and fields.minBuyout and fields.numAuctions then
-      for dbKey, values in pairs(snapshot) do
-        snapshot[dbKey] = {
-          minBuyout = values[fields.minBuyout],
-          numAuctions = values[fields.numAuctions],
-          marketValueRecent = fields.marketValueRecent and values[fields.marketValueRecent],
-        }
-      end
-      feed.snapshot = snapshot
+    if downloadTime then
       feed.downloadTime = downloadTime
+      if fields.marketValueRecent then
+        for dbKey, values in pairs(recent) do
+          recent[dbKey] = values[fields.marketValueRecent]
+        end
+        feed.recent = recent
+      end
     end
   end
 
@@ -159,7 +151,7 @@ end
 -- ===== Public accessors =====
 
 function AP.TSMFeed.HasData()
-  return feed.marketValue ~= nil or feed.snapshot ~= nil
+  return feed.marketValue ~= nil or feed.recent ~= nil
 end
 
 function AP.TSMFeed.DownloadTime()
@@ -182,8 +174,7 @@ function AP.TSMFeed.MarketValue(dbKey)
   if type(dbKey) ~= "string" then return nil end
   local value = feed.marketValue and feed.marketValue[dbKey]
   if not value then
-    local entry = feed.snapshot and feed.snapshot[dbKey]
-    value = entry and entry.marketValueRecent
+    value = feed.recent and feed.recent[dbKey]
   end
   if value and value > 0 then return value end
   return nil
@@ -201,48 +192,6 @@ function AP.TSMFeed.MarketValueForLink(itemLink)
   return nil
 end
 
--- ===== Import into Auctionator's price database =====
-
--- Feed the snapshot through Auctionator's own SetPrice, the code path a real
--- scan uses: it only adds today's day bucket and the last-seen price, so
--- existing history stays intact. Returns the item count, or nil when this
--- snapshot was already imported (tracked per character).
-function AP.TSMFeed.ImportScanData()
-  if not feed.snapshot or not feed.downloadTime then return nil end
-  if not Auctionator.Database then return nil end
-  if AuctionatorPlusDB.tsmLastImport == feed.downloadTime then return nil end
-
-  local count = 0
-  for dbKey, entry in pairs(feed.snapshot) do
-    if entry.minBuyout and entry.minBuyout > 0 then
-      Auctionator.Database:SetPrice(dbKey, entry.minBuyout, entry.numAuctions)
-      count = count + 1
-    end
-  end
-
-  AuctionatorPlusDB.tsmLastImport = feed.downloadTime
-  return count
-end
-
--- ===== Settings persistence (self-contained, per character) =====
-
-local function LoadFeedSettings()
-  if type(AuctionatorPlusDB) ~= "table" then
-    AuctionatorPlusDB = {}
-  end
-  if type(AuctionatorPlusDB.tsmUseTrend) == "boolean" then
-    AP.TSMFeed.Settings.useTrend = AuctionatorPlusDB.tsmUseTrend
-  end
-  if type(AuctionatorPlusDB.tsmImportScans) == "boolean" then
-    AP.TSMFeed.Settings.importScans = AuctionatorPlusDB.tsmImportScans
-  end
-end
-
-function AP.TSMFeed.SaveSettings()
-  AuctionatorPlusDB.tsmUseTrend = AP.TSMFeed.Settings.useTrend
-  AuctionatorPlusDB.tsmImportScans = AP.TSMFeed.Settings.importScans
-end
-
 -- ===== Events =====
 
 local frame = CreateFrame("Frame")
@@ -257,16 +206,6 @@ frame:SetScript("OnEvent", function(self, event, addonName)
     end
 
   elseif event == "PLAYER_LOGIN" then
-    LoadFeedSettings()
     DecodeCaptured()
-
-    if AP.TSMFeed.Settings.importScans then
-      local count = AP.TSMFeed.ImportScanData()
-      if count then
-        print(string.format(
-          "|cff88ccffAuctionatorPlus|r: merged %d TSM prices into the scan database (%s old).",
-          count, AP.TSMFeed.AgeText() or "?"))
-      end
-    end
   end
 end)
