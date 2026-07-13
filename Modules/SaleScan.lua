@@ -1,6 +1,6 @@
 local _, AP = ...
 
--- "Sale Scan": a button right of the AH money frame in the selling tab. One click runs a live exact-name search per distinct bag-listing item — the same sequential term scan a shopping list runs — feeding Auctionator's price database so Rel. Value and the bag glow reflect current prices.
+-- "Sale Scan": a button right of the AH money frame in the selling tab. One click runs a live exact-name search per distinct bag-listing item — the same sequential term scan a shopping list runs, first page only since only the lowest price matters — feeding Auctionator's price database so Rel. Value and the bag glow reflect current prices.
 AP.SaleScan = {}
 
 local BUTTON_LABEL = "Sale Scan"
@@ -17,6 +17,7 @@ local state = {
   total = 0,
   entries = nil,    -- results collected for the in-flight query
   scanning = false,
+  aborting = false, -- we cut the query short ourselves; expect ScanAborted
 }
 local listener
 
@@ -81,6 +82,7 @@ local function Stop()
   state.queue = nil
   state.entries = nil
   state.scanning = false
+  state.aborting = false
   SetSpinnerShown(false)
   if AP.saleScanButton then
     AP.saleScanButton:SetText(BUTTON_LABEL)
@@ -108,6 +110,17 @@ local function NextQuery()
   if not ok then Stop() end
 end
 
+local function FinishQuery()
+  local batch = state.entries
+  state.entries = nil
+  state.scanning = false
+  if #batch > 0 then
+    Auctionator.Search.GroupResultsForDB(batch)
+  end
+  AP.BagGlow.Repaint()
+  NextQuery()
+end
+
 local function ReceiveEvent(_, eventName, eventData, gotAllResults)
   local AH = Auctionator.AH.Events
 
@@ -119,19 +132,21 @@ local function ReceiveEvent(_, eventName, eventData, gotAllResults)
       end
     end
     if gotAllResults then
-      local batch = state.entries
-      state.entries = nil
-      state.scanning = false
-      if #batch > 0 then
-        Auctionator.Search.GroupResultsForDB(batch)
-      end
-      AP.BagGlow.Repaint()
-      NextQuery()
+      FinishQuery()
+    else
+      -- pages arrive sorted by unit price, so the first already holds the cheapest; skip the rest like a shopping search without "always load more"
+      state.aborting = true
+      Auctionator.AH.AbortQuery()
     end
 
   elseif eventName == AH.ScanAborted then
-    -- another search stomped ours; whatever the user started wins
-    if state.scanning then Stop() end
+    if state.aborting then
+      state.aborting = false
+      FinishQuery()
+    elseif state.scanning then
+      -- another search stomped ours; whatever the user started wins
+      Stop()
+    end
 
   elseif eventName == AH.ThrottleUpdate then
     if eventData == true then NextQuery() end
