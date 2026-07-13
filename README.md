@@ -4,19 +4,17 @@ A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/aucti
 
 ## Features
 
-- **Price-history tooltips** — hover any item while the Auction House is open to see *Avg. Buyout* and *Trend*. Stays out of the way inside the buy detail and sell-item views.
+- **Price-history tooltips** — item tooltips carry a **Market Value** section (one row per source: *Auctionator*, the average minimum buyout from your scans, and *TSM*, tagged with the app data's age) and a **Relative Value** section comparing the last known price against each anchor, coloured for the active view at the Auction House. Stays out of the way inside the buy detail and sell-item views.
 - **Check Similar Items** — enable the checkbox in the Selling tab. When you place a gear item to sell, a background Auction House search runs (no tab switching) for the same **slot + armor type** within **±2 of the required level**, and the matches are listed in the Selling tab's current-prices panel alongside Auctionator's usual name-based results.
 - **Same Stats** — a second checkbox next to *Check Similar Items*. When also enabled, the comparables are narrowed to items carrying the **same stats** as the item being sold (stat names, any value; DPS presence for weapons). Example: listing cloth boots with Intellect + Stamina at level 50 shows other level 48–52 cloth boots with exactly Intellect and Stamina — not ones that also have Spirit. With it off, every same-slot/armor-type/level item is shown.
-- **Trend columns** — the shopping results and current-prices listings gain a *Trend* column showing each item's price against its 21-day average minimum buyout (green when favourable for the view), so underpriced deals stand out at a glance.
-- **Decision tooltip** — while the Auction House is open, the price-history tooltip adds *Scan Days* (how many days feed the average, e.g. "14 of 21"), so a trend percentage can be judged by the data behind it; the count turns orange below 10 days and red below 5.
-- **TSM tooltip lines** — with the TSM desktop application running and the TradeSkillMaster_AppHelper addon present, AuctionatorPlus captures the app's realm market data on login (TSM itself receives it unchanged). While the Auction House is open, item tooltips then also show *TSM Market Value* (with the data's age) and *TSM Trend* — the current price against TSM's market value — next to the local trend. Without app data these lines simply stay hidden. Fresh app data is picked up on login or `/reload`.
-- **Flip Potential** — a verdict line under the TSM data for currently listed items: **Buy** (green) when the price is below both baselines, clears the 5% AH cut against a mid-range/market-value exit with at least 10% margin, sits at the historical floor with 10+ scanned days behind it, and the local and TSM trends agree (within 25 points); **Risky Buy** (orange) when it's cheap and profitable but the history is thin, the price isn't at the floor, or the two trends disagree; **Don't Buy** (red) when it isn't cheap on either baseline or leaves no margin after the cut. Each verdict carries the estimated profit or the blocking reason in gray.
+- **Rel. Value columns** — the shopping results and current-prices listings gain a *Rel. Value* column showing each item's price against its 21-day average minimum buyout (green when favourable for the view), so underpriced deals stand out at a glance.
+- **TSM data rows** — with the TSM desktop application running and the TradeSkillMaster_AppHelper addon present, AuctionatorPlus captures the app's realm market data on login (TSM itself receives it unchanged) and fills the *TSM* rows of both tooltip sections. Without app data the rows stay hidden and a short setup hint shows at the tooltip bottom instead. Fresh app data is picked up on login or `/reload`.
 
 ## Usage
 
 1. In the Selling tab, tick **Check Similar Items**, then drop a gear item — comparable auctions appear in its current-prices list automatically.
 2. Hover an item to see its price history.
-3. Sort shopping results by the **Trend** column to surface underpriced items.
+3. Sort shopping results by the **Rel. Value** column to surface underpriced items.
 
 The tooltip block and trend columns share the data Auctionator already collected. The similar-items search runs in the background on the Selling tab (no tab switching) and merges into the current-prices listing.
 

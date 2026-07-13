@@ -6,13 +6,6 @@ AP.Tooltip = {}
 
 -- ===== Price-history statistics =====
 
-local function VolatilityBucket(cv, sampleCount)
-  if sampleCount < 3 then return nil end
-  if cv < 0.10 then return "Low" end
-  if cv < 0.25 then return "Med" end
-  return "High"
-end
-
 local MAD_SCALE          = 1.4826 -- scales MAD to match a standard deviation
 local OUTLIER_CUTOFF     = 3      -- drop days beyond this many scaled MADs
 local MIN_FILTER_SAMPLES = 4      -- fewer days cannot tell an outlier apart
@@ -27,9 +20,7 @@ local function Median(sorted)
   return sorted[mid + 1]
 end
 
--- Daily minimums that survive a median/MAD outlier filter. The median anchors
--- the filter because one freak day (a single 300% listing) cannot move it,
--- unlike a mean/stdev cutoff where the outlier inflates its own yardstick.
+-- Anchor the outlier filter on the median: one freak day cannot move it, unlike a mean/stdev cutoff.
 local function FilterOutliers(prices)
   if #prices < MIN_FILTER_SAMPLES then return prices end
 
@@ -52,8 +43,7 @@ local function FilterOutliers(prices)
   return kept
 end
 
--- Day index Auctionator records for "today" (days since SCAN_DAY_0), matching
--- the rawDay on each history entry.
+-- Match Auctionator's day index (days since SCAN_DAY_0), as carried by each entry's rawDay.
 local function CurrentScanDay()
   return math.floor((time() - Auctionator.Constants.SCAN_DAY_0) / 86400)
 end
@@ -64,7 +54,7 @@ function AP.History.Compute(dbKey)
   local ok, history = pcall(Auctionator.Database.GetPriceHistory, Auctionator.Database, dbKey)
   if not ok or not history or #history == 0 then return nil end
 
-  -- Keep only the last month of data so the trend tracks the current market.
+  -- Keep only the history window so the trend tracks the current market.
   local cutoffDay = CurrentScanDay() - AP.Constants.HistoryWindowDays
 
   local recent = {}
@@ -80,40 +70,19 @@ function AP.History.Compute(dbKey)
   if #recent == 0 then return nil end
 
   local kept = FilterOutliers(recent)
-  local minCount = #kept
 
   local minSum = 0
-  local rangeMin, rangeMax = kept[1], kept[1]
   for _, minSeen in ipairs(kept) do
     minSum = minSum + minSeen
-    if minSeen < rangeMin then rangeMin = minSeen end
-    if minSeen > rangeMax then rangeMax = minSeen end
   end
-  local mean = minSum / minCount
-
-  local sqSum = 0
-  for _, minSeen in ipairs(kept) do
-    local diff = minSeen - mean
-    sqSum = sqSum + diff * diff
-  end
-  local stdev = math.sqrt(sqSum / minCount)
-  local cv = mean > 0 and (stdev / mean) or 0
+  local mean = minSum / #kept
 
   return {
     averageMinBuyout = math.floor(mean + 0.5),
-    volatility       = cv,
-    volatilityBucket = VolatilityBucket(cv, minCount),
-    dayCount         = minCount,
-    -- Band the daily floor moved in; feeds the flip verdict, not displayed
-    rangeMin         = rangeMin,
-    rangeMax         = rangeMax,
   }
 end
 
--- Stats for the first of the link's db keys with usable history, so suffixed
--- gear is measured against its own suffix market before the pooled base item.
--- This matches the key preference of Auctionator's price lookups, keeping the
--- trend's current price and average on the same price series.
+-- Prefer the first db key with usable history, so suffixed gear measures against its own suffix market before the pooled base item, matching Auctionator's price lookups.
 function AP.History.ComputeForLink(itemLink)
   local dbKeys = AP.Bridge.DBKeysForLink(itemLink)
   if not dbKeys then return nil end
@@ -134,23 +103,20 @@ AP.Trend.UP_GREEN = "upGreen" -- increase green, decrease red (selling, native A
 AP.Trend.UP_RED   = "upRed"   -- increase red, decrease green (shopping / browse)
 AP.Trend.NEUTRAL  = "neutral" -- always white
 
--- Whole-percent deviation of currentPrice from average. nil when either input
--- is missing or non-positive.
+-- Whole-percent deviation of currentPrice from average; nil when either input is unusable.
 function AP.Trend.Percent(currentPrice, average)
   if type(currentPrice) ~= "number" or currentPrice <= 0 then return nil end
   if type(average) ~= "number" or average <= 0 then return nil end
   return math.floor((currentPrice - average) / average * 100 + 0.5)
 end
 
--- Historical average min buyout for an item link, via Auctionator's price
--- database. nil when there is no usable history.
+-- Historical average min buyout for an item link; nil without usable history.
 function AP.Trend.AverageFor(itemLink)
   local stats = AP.History.ComputeForLink(itemLink)
   return stats and stats.averageMinBuyout
 end
 
--- "+N%" / "-N%" / "0%" wrapped in the colour dictated by mode. A nil pct yields
--- nil so callers can skip an empty trend.
+-- "+N%" / "-N%" / "0%" wrapped in the colour dictated by mode; nil pct yields nil so callers can skip an empty trend.
 function AP.Trend.Colorize(pct, mode)
   if type(pct) ~= "number" then return nil end
 
@@ -171,58 +137,56 @@ end
 
 -- ===== Item tooltip lines =====
 
--- Trend colour depends on the active auction-house view: the selling tab and
--- the native Browse/Auctions tabs treat price increases as good (green); the
--- shopping/browse tab reverses it (increases red). Any other view shows the
--- trend without a verdict (white). Uses IsVisible so a deselected Auctionator
--- tab (its wrapper hidden) does not register as active. Shared with the TSM
--- tooltip lines in TSMTrend.lua.
+-- Reverse the colours in buying views (a price increase is bad for a buyer); IsVisible so a deselected Auctionator tab does not register as active.
 function AP.Tooltip.TrendMode()
   if _G.AuctionatorShoppingFrame and _G.AuctionatorShoppingFrame:IsVisible() then
     return AP.Trend.UP_RED
   end
-  if _G.AuctionatorSellingFrame and _G.AuctionatorSellingFrame:IsVisible() then
-    return AP.Trend.UP_GREEN
-  end
   if _G.AuctionFrameBrowse and _G.AuctionFrameBrowse:IsVisible() then
-    return AP.Trend.UP_GREEN
+    return AP.Trend.UP_RED
   end
-  if _G.AuctionFrameAuctions and _G.AuctionFrameAuctions:IsVisible() then
-    return AP.Trend.UP_GREEN
-  end
-  return AP.Trend.NEUTRAL
+  return AP.Trend.UP_GREEN
 end
 
+-- Add a Market Value and a Relative Value section, one row per source (Auctionator scans, TSM app feed); sources without data skip their rows.
 function AP.Tooltip.Apply(tooltip, itemLink)
   if not tooltip or not itemLink then return end
 
   local stats = AP.History.ComputeForLink(itemLink)
-  if not stats then return end
+  local tsmValue = AP.TSMFeed and AP.TSMFeed.MarketValueForLink(itemLink)
+  if not stats and not tsmValue then return end
 
-  local cfg = AP.Constants.Tooltip
-  tooltip:AddDoubleLine(
-    cfg.AverageLabel,
-    WHITE_FONT_COLOR:WrapTextInColorCode(AP.Format.Money(stats.averageMinBuyout)))
+  local tsmLabel = "TSM"
+  local age = AP.TSMFeed and AP.TSMFeed.AgeText()
+  if age then
+    tsmLabel = tsmLabel .. " (" .. age .. ")"
+  end
 
-  -- Trend, floor range, and sample size are buy/sell decision context, so
-  -- they show only while the auction house is open.
-  if AP.ahOpen then
-    local pct = AP.Trend.Percent(AP.Bridge.AuctionPrice(itemLink), stats.averageMinBuyout)
-    local trendText = AP.Trend.Colorize(pct, AP.Tooltip.TrendMode())
-    if trendText then
-      tooltip:AddDoubleLine(cfg.TrendLabel, trendText)
+  tooltip:AddLine(" ")
+  tooltip:AddLine("Market Value", NORMAL_FONT_COLOR:GetRGB())
+  if stats then
+    tooltip:AddDoubleLine(
+      "Auctionator", AP.Format.Money(stats.averageMinBuyout), 1, 1, 1, 1, 1, 1)
+  end
+  if tsmValue then
+    tooltip:AddDoubleLine(tsmLabel, AP.Format.Money(tsmValue), 1, 1, 1, 1, 1, 1)
+  end
+
+  local price = AP.Bridge.AuctionPrice(itemLink)
+  local mode = AP.Tooltip.TrendMode()
+  local localPct = stats and AP.Trend.Colorize(
+    AP.Trend.Percent(price, stats.averageMinBuyout), mode)
+  local tsmPct = tsmValue and AP.Trend.Colorize(AP.Trend.Percent(price, tsmValue), mode)
+
+  if localPct or tsmPct then
+    tooltip:AddLine(" ")
+    tooltip:AddLine("Relative Value", NORMAL_FONT_COLOR:GetRGB())
+    if localPct then
+      tooltip:AddDoubleLine("Auctionator", localPct, 1, 1, 1, 1, 1, 1)
     end
-
-    -- Few sampled days make the average and trend unreliable; colour-code the
-    -- sample size so a weak basis is visible at a glance.
-    local daysColor = WHITE_FONT_COLOR
-    if stats.dayCount < 5 then
-      daysColor = RED_FONT_COLOR
-    elseif stats.dayCount < 10 then
-      daysColor = ORANGE_FONT_COLOR
+    if tsmPct then
+      tooltip:AddDoubleLine("TSM", tsmPct, 1, 1, 1, 1, 1, 1)
     end
-    tooltip:AddDoubleLine("Scan Days", daysColor:WrapTextInColorCode(
-      stats.dayCount .. " of " .. AP.Constants.HistoryWindowDays))
   end
 
   -- Trigger a resize so newly added lines render inside the tooltip frame.
@@ -231,8 +195,7 @@ end
 
 -- ===== Tooltip hooks =====
 
--- Item-setting methods that exist on this client get a post-hook; the per-name
--- check matters because the list spans several client flavors.
+-- Hook only the item-setting methods that exist on this client; the list spans several flavors.
 local TOOLTIP_METHODS = {
   "SetBagItem", "SetBuybackItem", "SetMerchantItem", "SetInventoryItem",
   "SetGuildBankItem", "SetLootItem", "SetLootRollItem",

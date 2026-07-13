@@ -9,10 +9,7 @@ local STAT_TOKENS = AP.StatScan.STAT_TOKENS
 local DIALOG_WIDTH = 510
 local PANEL_WIDTH = 150
 
--- The panel itself is the source of truth: its controls persist across dialog
--- opens (we don't reset them in OnShow's ResetAll path), and `active` is
--- rebuilt from the panel on every SearchStart so toggling a box takes effect
--- on the next search regardless of where it was triggered from.
+-- Rebuild `active` from the panel on every SearchStart, so toggling a box takes effect on the next search no matter where it was triggered from.
 local active = nil
 
 local function ReadDraft(panel)
@@ -94,9 +91,7 @@ local function BuildPanel(dialog)
   panel.dpsEdit = dpsEdit
   dialog.auctionatorPlusStatFilter = panel
 
-  -- The dialog's "Reset All" button clears Auctionator's own fields via
-  -- ResetAll(); auto-OnShow uses the same call, so we can't differentiate
-  -- there. Hook the button itself so only an explicit click wipes our panel.
+  -- Hook the button, not ResetAll(): auto-OnShow calls ResetAll too, and only an explicit click should wipe the panel.
   if dialog.ResetAllButton then
     dialog.ResetAllButton:HookScript("OnClick", function()
       ClearControls(panel)
@@ -104,11 +99,7 @@ local function BuildPanel(dialog)
   end
 end
 
--- AddFinalResults only awaits the base item (Item:CreateFromItemID) before
--- calling CheckFilters; for random-suffix gear the variant tooltip can still
--- be sparse, so be lenient: include results whose link data isn't cached yet
--- to avoid dropping legitimate matches. Loads kicked off in ProcessSearchResults
--- mean repeat searches see the variant cached and filter cleanly.
+-- Keep results whose link data is not cached yet rather than drop a legitimate match: random-suffix tooltips can be sparse when CheckFilters runs; loads kicked off in ProcessSearchResults let repeat searches filter cleanly.
 function AP.ShoppingFilter.PassesFilter(resultWithKey)
   if not active then return true end
 
@@ -125,9 +116,7 @@ function AP.ShoppingFilter.PassesFilter(resultWithKey)
   local text = AP.StatScan.ReadItemText(link)
   if not text then return true end
 
-  -- Plain substring match on the tooltip text. Structured parsing was too
-  -- brittle: any stat line the regex didn't capture exactly (suffix gear,
-  -- equip effects) silently dropped legitimate Agility/Stamina matches.
+  -- Match by plain substring: structured stat parsing silently dropped suffix-gear and equip-effect matches.
   for key in pairs(active.stats) do
     if not text:find(STAT_TOKENS[key], 1, true) then return false end
   end
@@ -140,23 +129,20 @@ function AP.ShoppingFilter.PassesFilter(resultWithKey)
   return true
 end
 
--- The dialog is created later (on AH open); hooking the mixin table now lets
--- Mixin() copy our wrapped OnLoad onto the frame at creation time.
+-- Hook the mixin table now so Mixin() copies the wrapped OnLoad onto the dialog when it is created on AH open.
 hooksecurefunc(AuctionatorShoppingItemMixin, "OnLoad", function(self)
   if self ~= _G.AuctionatorShoppingTabItemFrame then return end
   BuildPanel(self)
 end)
 
--- CheckFilters returns a boolean; replacing (rather than post-hooking) lets
--- a failed stat/DPS check veto a result.
+-- Replace rather than post-hook: a failed stat/DPS check must veto the result.
 local originalCheckFilters = Auctionator.Search.CheckFilters
 Auctionator.Search.CheckFilters = function(resultWithKey, filters)
   if not originalCheckFilters(resultWithKey, filters) then return false end
   return AP.ShoppingFilter.PassesFilter(resultWithKey)
 end
 
--- Warm the suffix-variant cache as scan pages arrive so the tooltip read
--- in PassesFilter has full stat lines by the time AddFinalResults fires.
+-- Warm the suffix-variant cache as scan pages arrive so PassesFilter sees full stat lines when AddFinalResults fires.
 hooksecurefunc(AuctionatorDirectSearchProviderMixin, "ProcessSearchResults", function(_, pageResults)
   if type(pageResults) ~= "table" then return end
   for _, entry in ipairs(pageResults) do

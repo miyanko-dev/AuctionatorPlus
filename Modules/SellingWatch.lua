@@ -2,8 +2,7 @@ local _, AP = ...
 
 AP.SellingWatch = {}
 
--- Non-gear equip locations to ignore (trade goods / unequippable items report an
--- empty equipLoc). Every other equippable slot is supported.
+-- Ignore non-gear equip locations; trade goods and unequippable items report an empty equipLoc.
 local NON_GEAR_SLOTS = {
   [""] = true,
   INVTYPE_BAG = true,
@@ -13,8 +12,7 @@ local NON_GEAR_SLOTS = {
   INVTYPE_NON_EQUIP_IGNORE = true,
 }
 
--- Body-armor slots carry an armor-type (cloth/leather/...) distinction; cloak,
--- neck, finger and trinket are wearable by all classes, so they are excluded.
+-- Body-armor slots carry an armor-type distinction; cloak, neck, finger and trinket are wearable by all classes, so they are excluded.
 local BODY_ARMOR_SLOTS = {
   INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
   INVTYPE_ROBE = true, INVTYPE_WAIST = true, INVTYPE_LEGS = true,
@@ -23,8 +21,7 @@ local BODY_ARMOR_SLOTS = {
 
 local LEVEL_RANGE = 2
 
--- A single placement fires StartFakeBuyLoading several times in a burst; absorb
--- repeats of the same item within this window, but re-run on a genuine re-drop.
+-- Absorb the burst of StartFakeBuyLoading repeats one placement fires, but re-run on a genuine re-drop.
 local REDROP_DEBOUNCE = 1.0
 
 local watch = {
@@ -37,7 +34,6 @@ local watch = {
   scanToken = nil,
   trackedLink = nil,  -- sale-slot item driving the checkbox state
   saleIsGear = false,
-  saleHasStats = false,
 }
 local scanListener
 
@@ -45,9 +41,7 @@ local function IsSupportedGear(equipLoc)
   return type(equipLoc) == "string" and NON_GEAR_SLOTS[equipLoc] ~= true
 end
 
--- The pair only acts on a supported piece of gear in the sale slot, and Same
--- Stats additionally needs the item to carry a primary stat; grey them out
--- otherwise (Same Stats also keeps requiring Check Similar Items to be on).
+-- Grey the pair out without supported gear in the sale slot; Same Stats additionally requires Check Similar Items on, and weapons count since their stat matching compares DPS presence.
 local function UpdateCheckboxState()
   local check, sameStats = AP.checkOtherItemsButton, AP.sameStatsButton
   if not check then return end
@@ -60,7 +54,7 @@ local function UpdateCheckboxState()
     check.apLabel:SetFontObject("GameFontDisableSmall")
   end
 
-  if watch.saleIsGear and watch.saleHasStats and AP.Settings.checkOtherItems then
+  if watch.saleIsGear and AP.Settings.checkOtherItems then
     sameStats:Enable()
     sameStats.apLabel:SetFontObject("GameFontNormalSmall")
   else
@@ -69,13 +63,11 @@ local function UpdateCheckboxState()
   end
 end
 
--- Track what sits in the sale slot; equip location and stats are only readable
--- once the item data is cached, so the state settles in the load callback.
+-- Track what sits in the sale slot; the equip location is only readable once cached, so the state settles in the load callback.
 local function TrackSaleItem(itemLink)
   if itemLink == watch.trackedLink then return end
   watch.trackedLink = itemLink
   watch.saleIsGear = false
-  watch.saleHasStats = false
   UpdateCheckboxState()
 
   local item = itemLink and Item:CreateFromItemLink(itemLink)
@@ -84,14 +76,11 @@ local function TrackSaleItem(itemLink)
     if watch.trackedLink ~= itemLink then return end
     local equipLoc = AP.StatScan.GetEquipInfo(itemLink)
     watch.saleIsGear = IsSupportedGear(equipLoc)
-    local statSet = AP.StatScan.PrimaryStatSet(AP.StatScan.ReadItemText(itemLink))
-    watch.saleHasStats = next(statSet) ~= nil
     UpdateCheckboxState()
   end)
 end
 
--- Weapons compare by weapon type only (restricted server-side via the category);
--- armor narrows by slot, plus armor type for the body slots.
+-- Compare weapons by weapon type only (restricted server-side via the category); narrow armor by slot, plus armor type for body slots.
 local function BuildFilter(classID, equipLoc, itemSubType)
   if classID == Enum.ItemClass.Weapon then
     return nil
@@ -103,8 +92,7 @@ local function BuildFilter(classID, equipLoc, itemSubType)
   return filter
 end
 
--- classID + Auctionator categoryKey for the item, slot-scoped for body armor
--- (e.g. "Armor/Mail/Hands"), otherwise class/subclass (e.g. "Weapon/Daggers").
+-- classID + Auctionator categoryKey, slot-scoped for body armor ("Armor/Mail/Hands"), otherwise class/subclass ("Weapon/Daggers").
 local function CategoryForItem(itemLink, equipLoc)
   local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemLink)
   if not classID then return nil end
@@ -128,8 +116,7 @@ local function CategoryForItem(itemLink, equipLoc)
   return classID, categoryKey
 end
 
--- Build the comparison profile for the dropped sale item (synchronous; the item
--- is cached once it is in the sell slot). nil for unsupported items.
+-- Build the comparison profile for the dropped sale item, synchronous since the slotted item is cached; nil for unsupported items.
 local function ProfileForItem(itemLink)
   local equipLoc, _, itemSubType = AP.StatScan.GetEquipInfo(itemLink)
   if not IsSupportedGear(equipLoc) then return nil end
@@ -185,8 +172,7 @@ local function StopScan()
   watch.scanEntries = nil
 end
 
--- Load every candidate's item data, then call back. Reading stat tooltips on
--- random-suffix gear needs the item cached, so wait before filtering by stats.
+-- Load every candidate's item data before the callback; stat tooltips on random-suffix gear need the item cached.
 local function EnsureLoaded(entries, callback)
   local loading = {}
   for _, entry in ipairs(entries) do
@@ -217,9 +203,7 @@ local function MergeIntoProvider(provider, entries)
   if added > 0 then provider:PopulateAuctions() end
 end
 
--- Merge slot/armor/level matches into the current-prices listing alongside the
--- name-based results. With "Same Stats" on, narrow further to items carrying the
--- exact same primary-stat set as the dropped item (values ignored).
+-- Merge slot/armor/level matches into the current-prices listing; with "Same Stats" on, narrow to the exact primary-stat set of the dropped item (values ignored).
 local function InjectComparables(pending, entries)
   local provider = CurrentPricesProvider()
   if not provider or not provider.allAuctions then return end
@@ -252,9 +236,7 @@ local function InjectComparables(pending, entries)
   end)
 end
 
--- Background search for same slot/armor type within +/- LEVEL_RANGE of the
--- required level. Runs on the shared scanner without switching tabs; safe to
--- start here because the selling tab's own name search has just finished.
+-- Search same slot/armor type within +/- LEVEL_RANGE in the background; safe on the shared scanner because the selling tab's own name search has just finished.
 local function RunComparableSearch(pending)
   watch.scanEntries = {}
   watch.scanning = true
@@ -284,9 +266,7 @@ local function CommitPending(itemLink)
   watch.pending = profile
 end
 
--- A gear item entered the sale slot: capture its profile. The comparable search
--- is started once the selling tab's own name search completes (ViewSetup), so
--- the two don't fight over the shared scanner.
+-- Capture the profile now; the comparable search starts on ViewSetup so it never fights the selling tab's own name search for the scanner.
 local function StartForItem(itemLink)
   watch.token = watch.token + 1
   StopScan()
@@ -314,8 +294,7 @@ local function ReceiveEvent(_, eventName, eventData, arg3)
     if not link then return end
     TrackSaleItem(link)
     if not AP.Settings.checkOtherItems then return end
-    -- Skip the rapid repeat fires for the item we just handled; a later re-drop
-    -- still re-runs so the comparables stay up to date.
+    -- Skip the rapid repeat fires for the item just handled; a later re-drop still re-runs.
     if link == watch.lastLink and watch.lastProcessAt
         and (GetTime() - watch.lastProcessAt) < REDROP_DEBOUNCE then
       return
@@ -387,8 +366,7 @@ local function EnsureCheckbox()
   label:SetPoint("LEFT", check, "RIGHT", 2, 0)
   label:SetText("Check Similar Items")
 
-  -- "Same Stats" narrows the similar-items list to the same primary-stat set.
-  -- Only meaningful while similar items are shown, so it tracks the box above.
+  -- "Same Stats" narrows to the same primary-stat set; only meaningful while similar items are shown, so it tracks the box above.
   local sameStats = CreateFrame(
     "CheckButton", "AuctionatorPlusSameStats", sellingFrame, "UICheckButtonTemplate")
   sameStats:SetSize(24, 24)
@@ -432,8 +410,8 @@ local function EnsureCheckbox()
     GameTooltip:AddLine(
       "Only list similar items that carry the same stats as the item being sold (e.g. Agility and Stamina). Stat values are ignored.",
       1, 1, 1, true)
-    if not (watch.saleIsGear and watch.saleHasStats) then
-      GameTooltip:AddLine("Enabled while gear with primary stats sits in the sale slot, with Check Similar Items on.", 0.7, 0.7, 0.7, true)
+    if not watch.saleIsGear then
+      GameTooltip:AddLine("Enabled while a piece of gear sits in the sale slot, with Check Similar Items on.", 0.7, 0.7, 0.7, true)
     end
     GameTooltip:Show()
   end)
@@ -455,9 +433,7 @@ local function HookRefreshButton()
   local refreshButton = currentPrices and currentPrices.RefreshButton
   if not refreshButton then return false end
 
-  -- Refresh clears the data provider's auctions and re-runs the name search;
-  -- clearing searchStarted lets the next ViewSetup re-trigger our comparable
-  -- scan so the merged results stay in sync.
+  -- Clear searchStarted so the next ViewSetup re-triggers the comparable scan after Refresh re-runs the name search.
   refreshButton:HookScript("OnClick", function()
     if not watch.pending then return end
     StopScan()

@@ -1,7 +1,6 @@
 local _, AP = ...
 
--- The full-scan shopping button sits over the results inset, which the buy
--- screen covers; keep the button hidden while that screen is up.
+-- Hide the full-scan shopping button while the buy screen covers the results inset it sits over.
 local function SetFullScanButtonShown(shown)
   if AP.fullScanShoppingButton then
     if shown then AP.fullScanShoppingButton:Show() else AP.fullScanShoppingButton:Hide() end
@@ -34,8 +33,7 @@ local function HookBuyFrameVisibility()
   return true
 end
 
--- The Auctionator frames these attach to are created on (or shortly after) the
--- first auction-house open, so retry until every piece is in place.
+-- Retry until every piece is in place; Auctionator creates the host frames on or shortly after first AH open.
 local function EnsureButtons(attempt)
   attempt = attempt or 1
   local fullScanReady = AP.FullScanButton.Ensure()
@@ -48,17 +46,12 @@ end
 local bootstrap = CreateFrame("Frame")
 bootstrap:RegisterEvent("PLAYER_LOGIN")
 bootstrap:RegisterEvent("AUCTION_HOUSE_SHOW")
-bootstrap:RegisterEvent("AUCTION_HOUSE_CLOSED")
 bootstrap:SetScript("OnEvent", function(_, event)
   if event == "PLAYER_LOGIN" then
     AP.LoadSettings()
     AP.SellingWatch.Ensure()
 
   elseif event == "AUCTION_HOUSE_SHOW" then
-    AP.ahOpen = true
     EnsureButtons()
-
-  elseif event == "AUCTION_HOUSE_CLOSED" then
-    AP.ahOpen = false
   end
 end)

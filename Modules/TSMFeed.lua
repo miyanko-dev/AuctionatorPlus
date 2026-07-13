@@ -1,12 +1,7 @@
 local _, AP = ...
 
--- Market data from the TSM desktop application, captured on the way into the
--- game. The app rewrites TradeSkillMaster_AppHelper/AppData.lua, which calls
--- the global TSM_APPHELPER_LOAD_DATA while addons load; this module wraps that
--- global (forwarding to TSM untouched) and decodes the current realm's payloads
--- into per-item market values for the tooltip. Delete this file and
--- TSMTrend.lua (plus their .toc lines) to revoke the feature; neither
--- Auctionator nor TSM is modified.
+-- Capture the TSM desktop app's market data for the tooltip: AppData.lua calls the global TSM_APPHELPER_LOAD_DATA while addons load, so wrap it (forwarding to TSM untouched) and decode the current realm's payloads.
+-- Delete this file and TSMTrend.lua plus their .toc lines to revoke the feature.
 AP.TSMFeed = {}
 
 local DATA_TAG = "AUCTIONDB_NON_COMMODITY_DATA"
@@ -21,8 +16,7 @@ local feed = {
 
 -- ===== Payload capture =====
 
--- AppHelper compares realms case-insensitively with \226 (curly apostrophe
--- lead byte) squashed; the app's realm keys carry a -Faction suffix on era.
+-- Match realms the way AppHelper does: case-insensitive, curly apostrophes squashed; the app's realm keys carry a -Faction suffix on era.
 local function IsCurrentRealm(realm)
   local current = GetRealmName() .. "-" .. UnitFactionGroup("player")
   realm = string.gsub(realm, "\226", "'")
@@ -39,9 +33,7 @@ local function Capture(tag, realmOrRegion, payload)
   end
 end
 
--- Wrap the global delivery function, forwarding to whoever owned it. TSM
--- installs its own handler while it loads (after this addon, alphabetically),
--- so re-wrap on every ADDON_LOADED until AppHelper has delivered its data.
+-- Re-wrap the global on every ADDON_LOADED until AppHelper has delivered: TSM installs its own handler while loading (after this addon, alphabetically).
 local installedHook
 
 local function InstallHook()
@@ -59,8 +51,7 @@ InstallHook()
 
 -- ===== Payload decoding (format as parsed by TSM's AuctionDB service) =====
 
--- Values are base-32; longer strings are split because the client's tonumber
--- only handles 32-bit inputs. Mirrors TradeSkillMaster/Core/Service/AuctionDB.
+-- Decode base-32 values; longer strings are split at 2^30 because the client's tonumber only handles 32-bit inputs.
 local function DecodeValue(value)
   if #value > 6 then
     local low = tonumber(string.sub(value, -6), 32)
@@ -71,8 +62,7 @@ local function DecodeValue(value)
   return tonumber(value, 32)
 end
 
--- Payload shape: "return {downloadTime=...,fields={...},data={{...},{...}}}".
--- Returns downloadTime plus an iterator-ready fields index and the raw rows.
+-- Split "return {downloadTime=...,fields={...},data={{...}}}" into downloadTime, a fields index, and the raw rows.
 local function ParseMetadata(payload)
   local metadataEnd = string.find(payload, ",data={", 1, true)
   if not metadataEnd then return nil end
@@ -88,14 +78,11 @@ local function ParseMetadata(payload)
   end
   if metadata.fields[1] ~= "itemString" then return nil end
 
-  -- Skip past ",data={" (7 chars) so the row list starts at the first row's
-  -- own brace; keeping the outer brace corrupts the first row's itemString.
+  -- Skip past ",data={" (7 chars): keeping the outer brace corrupts the first row's itemString.
   return metadata.downloadTime, fieldIndex, string.sub(payload, metadataEnd + 7)
 end
 
--- Decode one payload, calling handler(dbKey, values[]) per plain-itemID row.
--- Suffixed/bonused item strings have no plain Auctionator key, so skip them.
--- Returns downloadTime and the field-name -> value-position index.
+-- Decode one payload, calling handler(dbKey, values[]) per plain-itemID row; suffixed item strings have no plain Auctionator key, so skip them.
 local function DecodeRows(payload, handler)
   local downloadTime, fieldIndex, rows = ParseMetadata(payload)
   if not downloadTime then return nil end
@@ -154,10 +141,6 @@ function AP.TSMFeed.HasData()
   return feed.marketValue ~= nil or feed.recent ~= nil
 end
 
-function AP.TSMFeed.DownloadTime()
-  return feed.downloadTime
-end
-
 -- Age of the app snapshot as short text ("3h" / "2d"); nil without data.
 function AP.TSMFeed.AgeText()
   if not feed.downloadTime then return nil end
@@ -168,8 +151,7 @@ function AP.TSMFeed.AgeText()
   return math.floor(age / 86400) .. "d"
 end
 
--- Smoothed TSM market value for an Auctionator db key; falls back to the
--- snapshot's recent market value when no scan-stat payload arrived.
+-- Smoothed TSM market value for an Auctionator db key; falls back to the snapshot's recent value when no scan-stat payload arrived.
 function AP.TSMFeed.MarketValue(dbKey)
   if type(dbKey) ~= "string" then return nil end
   local value = feed.marketValue and feed.marketValue[dbKey]
@@ -180,8 +162,7 @@ function AP.TSMFeed.MarketValue(dbKey)
   return nil
 end
 
--- Market value for an item link, most specific db key first (suffixed gear
--- pools into its base item because TSM ships plain item IDs on this client).
+-- Market value for an item link, most specific db key first; suffixed gear pools into its base item because TSM ships plain item IDs on this client.
 function AP.TSMFeed.MarketValueForLink(itemLink)
   local dbKeys = AP.Bridge.DBKeysForLink(itemLink)
   if not dbKeys then return nil end

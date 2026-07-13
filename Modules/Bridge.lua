@@ -1,8 +1,6 @@
 local _, AP = ...
 
--- Thin wrappers around the Auctionator internals this addon consumes.
--- Auctionator is a hard dependency, so everything here may assume it is
--- fully loaded; pcall stays where Auctionator can raise on bad input.
+-- Wrap the Auctionator internals this addon consumes; pcall where Auctionator can raise on bad input.
 AP.Bridge = {}
 
 local CallerID = AP.Constants.CallerID
@@ -15,10 +13,7 @@ function AP.Bridge.DBKeyForLink(itemLink)
   return key
 end
 
--- Price-database keys for an item link, most specific first (gear suffix key,
--- then base item id); nil when the link is unusable. The callback is immediate
--- on the legacy AH client; the basic key covers a deferred one, mirroring
--- Auctionator's own API fallback.
+-- Price-database keys, most specific first (gear suffix key, then base item id); the callback is immediate on the legacy AH client, the basic key covers a deferred one.
 function AP.Bridge.DBKeysForLink(itemLink)
   if not itemLink then return nil end
 
@@ -41,8 +36,7 @@ function AP.Bridge.AuctionPrice(itemLink)
   return nil
 end
 
--- Subscribe a handler to Auctionator event-bus events. Returns the listener so
--- callers can register or unregister it for further events later.
+-- Subscribe to Auctionator event-bus events; returns the listener for later register/unregister calls.
 function AP.Bridge.Listen(events, handler)
   local listener = { ReceiveEvent = handler }
   Auctionator.EventBus:Register(listener, events)

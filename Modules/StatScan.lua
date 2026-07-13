@@ -2,8 +2,7 @@ local _, AP = ...
 
 AP.StatScan = {}
 
--- Primary stats in display order, with Blizzard-localized labels and lowercased
--- tokens for matching against the lowercased tooltip text ReadItemText returns.
+-- Primary stats in display order, with Blizzard-localized labels; tokens match against the lowercased tooltip text ReadItemText returns.
 AP.StatScan.STAT_ORDER = { "strength", "agility", "stamina", "intellect", "spirit" }
 
 AP.StatScan.STAT_LABELS = {
@@ -30,9 +29,7 @@ local function EnsureScanTooltip()
   return scanTip
 end
 
--- Full tooltip text for an item link, lowercased, read off a hidden scan
--- tooltip (C_TooltipInfo does not exist on the Classic Era client). nil when
--- the item data is not cached yet.
+-- Read the full tooltip text for a link off a hidden scan tooltip (C_TooltipInfo does not exist on era), lowercased; nil while the item data is uncached.
 function AP.StatScan.ReadItemText(itemLink)
   if type(itemLink) ~= "string" or itemLink == "" then return nil end
 
@@ -61,8 +58,7 @@ function AP.StatScan.ReadItemText(itemLink)
   return table.concat(parts, "\n"):lower()
 end
 
--- The set of primary stats present on an item, by plain substring match on the
--- lowercased tooltip text (robust to "+N Stat" and "Equip: ... Stat by N" forms).
+-- Primary stats present on an item by plain substring match, robust to "+N Stat" and "Equip: ... Stat by N" forms.
 function AP.StatScan.PrimaryStatSet(itemText)
   local present = {}
   if type(itemText) ~= "string" then return present end
@@ -79,8 +75,7 @@ function AP.StatScan.SameStatSet(a, b)
   return true
 end
 
--- Localized DPS phrase (e.g. "damage per second") derived from DPS_TEMPLATE,
--- with the format placeholder and parentheses stripped.
+-- Localized DPS phrase (e.g. "damage per second") from DPS_TEMPLATE, placeholder and parentheses stripped.
 local dpsPhrase
 local function DpsPhrase()
   if dpsPhrase == nil then
@@ -94,8 +89,7 @@ local function DpsPhrase()
   return dpsPhrase
 end
 
--- Weapon DPS read from the tooltip ("(37.5 damage per second)"), rounded to an
--- integer so values compare cleanly. nil for items without a DPS line.
+-- Weapon DPS from the tooltip ("(37.5 damage per second)"), rounded so values compare cleanly; nil without a DPS line.
 function AP.StatScan.ParseDPS(itemText)
   if type(itemText) ~= "string" then return nil end
   local phrase = DpsPhrase()

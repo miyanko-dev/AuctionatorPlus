@@ -1,20 +1,12 @@
 local _, AP = ...
 
--- Tracks whether the auction house is currently open (set in Bootstrap).
-AP.ahOpen = false
-
 AP.Constants = {
   CallerID = "AuctionatorPlus",
 
   HistoryWindowDays = 21,  -- matches Auctionator's default price-history retention
-
-  Tooltip = {
-    AverageLabel = "Avg. Buyout",
-    TrendLabel   = "Trend",
-  },
 }
 
--- Persisted options (loaded from AuctionatorPlusDB on PLAYER_LOGIN).
+-- Persist options in AuctionatorPlusDB; loaded on PLAYER_LOGIN.
 AP.Settings = {
   checkOtherItems = false,
   sameStats = false,
