@@ -13,6 +13,8 @@ Modules\Bridge.lua
 Modules\StatScan.lua
 Modules\PriceHistory.lua
 Modules\TrendColumn.lua
+Modules\BagGlow.lua
+Modules\SaleScan.lua
 Modules\SellingWatch.lua
 Modules\ShoppingFilter.lua
 Modules\FullScanButton.lua
