@@ -224,7 +224,7 @@ function AP.SaleScan.Ensure()
     GameTooltip:SetOwner(self, "ANCHOR_TOP")
     GameTooltip:SetText(BUTTON_LABEL)
     GameTooltip:AddLine(
-      "Runs one live price search for every item in the bag list, like scanning a shopping list, so Rel. Value and the green glow use current auction prices. Steps aside for your own searches.",
+      "Runs one live price search for every item in the bag list, like scanning a shopping list, so Rel. Value and the item glows use current auction prices. Steps aside for your own searches.",
       1, 1, 1, true)
     GameTooltip:Show()
   end)
