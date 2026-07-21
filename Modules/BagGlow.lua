@@ -4,11 +4,10 @@ AP.BagGlow = {}
 
 local STRONG_PCT = 15  -- both values at or above this: green
 
--- One white atlas tinted per tier keeps the glow strength consistent under ADD blending; the premade colored atlases render far brighter.
-local GLOW_ATLAS = "bags-glow-white"
-local TIER_TINT = {
-  green  = { 0.1, 1, 0.1 },
-  yellow = { 1, 0.9, 0.1 },
+-- Green uses the premade atlas, far brighter under ADD blending, so it stays visible next to green-quality borders; yellow has no premade atlas and keeps the softer tinted white one.
+local TIER_GLOW = {
+  green  = { atlas = "bags-glow-green", tint = { 1, 1, 1 } },
+  yellow = { atlas = "bags-glow-white", tint = { 1, 0.9, 0.1 } },
 }
 
 -- Glow over a bag item's icon in the selling tab based on how its last known price sits against the 21-day Auctionator average and the TSM market value. Green when both relative values reach +15%; yellow when only one reaches it or both are positive below it, so the user can double check those items manually.
@@ -36,7 +35,6 @@ local function EnsureGlow(button)
   if not glow then
     glow = button:CreateTexture(nil, "OVERLAY", nil, 1)
     glow:SetAllPoints(button.Icon)
-    glow:SetAtlas(GLOW_ATLAS)
     glow:SetBlendMode("ADD")
     button.auctionatorPlusGlow = glow
   end
@@ -46,9 +44,10 @@ end
 local function Apply(button, itemLink)
   local tier = itemLink and Classify(itemLink)
   if tier then
-    local tint = TIER_TINT[tier]
+    local style = TIER_GLOW[tier]
     local glow = EnsureGlow(button)
-    glow:SetVertexColor(tint[1], tint[2], tint[3])
+    glow:SetAtlas(style.atlas)
+    glow:SetVertexColor(style.tint[1], style.tint[2], style.tint[3])
     glow:Show()
   elseif button.auctionatorPlusGlow then
     button.auctionatorPlusGlow:Hide()
