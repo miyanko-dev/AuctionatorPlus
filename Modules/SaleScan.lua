@@ -157,7 +157,7 @@ local function receiveEvent(_, eventName, eventData, gotAllResults)
     end
 end
 
-listener = { receiveEvent = receiveEvent }
+listener = { ReceiveEvent = receiveEvent }
 
 local function bagItemNames()
     local listing = _G.AuctionatorSellingFrame and _G.AuctionatorSellingFrame.BagListing
