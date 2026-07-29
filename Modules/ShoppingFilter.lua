@@ -14,7 +14,7 @@ local active = nil
 local pending = nil
 
 local function readDraft(panel)
-    local draft = { stats = {}, dpsMin = nil, any = false }
+    local draft = { stats = {}, dpsMin = nil, any = false, logic = panel.statLogic }
     for _, key in ipairs(STAT_ORDER) do
         if panel.statChecks[key]:GetChecked() then
             draft.stats[key] = true
@@ -37,6 +37,9 @@ local function clearControls(panel)
     end
     panel.dpsCheck:SetChecked(false)
     panel.dpsEdit:SetText("")
+    panel.statLogic = "AND"
+    -- GenerateMenu re-runs the radio setup so the button text reflects the reset value.
+    panel.logicDropdown:GenerateMenu()
 end
 
 local function buildPanel(dialog)
@@ -52,13 +55,25 @@ local function buildPanel(dialog)
     heading:SetPoint("TOPLEFT", 4, 0)
     heading:SetText("Filter by Stat")
 
+    -- AND is the historical behavior, so it stays the default after every reset.
+    panel.statLogic = "AND"
+    local logicDropdown = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
+    logicDropdown:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -2, -4)
+    logicDropdown:SetWidth(120)
+    MenuUtil.CreateRadioMenu(logicDropdown,
+        function(value) return panel.statLogic == value end,
+        function(value) panel.statLogic = value end,
+        { "Match All", "AND" },
+        { "Match Any", "OR" })
+    panel.logicDropdown = logicDropdown
+
     panel.statChecks = {}
-    local previous = heading
+    local previous = logicDropdown
     for index, key in ipairs(STAT_ORDER) do
         local check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
         check:SetSize(20, 20)
         if index == 1 then
-            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", -4, -4)
+            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", -2, -4)
         else
             check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -2)
         end
@@ -123,8 +138,21 @@ function AP.ShoppingFilter.PassesFilter(resultWithKey)
     if not text then return true end
 
     -- Match by plain substring: structured stat parsing silently dropped suffix-gear and equip-effect matches.
-    for key in pairs(active.stats) do
-        if not text:find(STAT_TOKENS[key], 1, true) then return false end
+    if next(active.stats) then
+        if active.logic == "OR" then
+            local matched = false
+            for key in pairs(active.stats) do
+                if text:find(STAT_TOKENS[key], 1, true) then
+                    matched = true
+                    break
+                end
+            end
+            if not matched then return false end
+        else
+            for key in pairs(active.stats) do
+                if not text:find(STAT_TOKENS[key], 1, true) then return false end
+            end
+        end
     end
 
     if active.dpsMin then
