@@ -100,6 +100,28 @@ function AP.StatScan.ParseDPS(itemText)
     return math.floor(dps + 0.5)
 end
 
+-- Lowercased match pattern built from CONTAINER_SLOTS ("%d Slot %s"), so bag tooltips parse in any locale.
+local slotPattern
+local function getSlotPattern()
+    if slotPattern == nil then
+        local template = _G.CONTAINER_SLOTS
+        if type(template) == "string" then
+            slotPattern = template:lower():gsub("[%(%)%.%+%-%*%?%[%]%^%$]", "%%%0")
+            slotPattern = slotPattern:gsub("%%%d?%$?d", "(%%d+)"):gsub("%%%d?%$?s", ".-")
+        else
+            slotPattern = "(%d+) slot"
+        end
+    end
+    return slotPattern
+end
+
+-- Container slot count from the tooltip line ("16 Slot Bag"); nil when no such line exists.
+function AP.StatScan.ParseSlotCount(itemText)
+    if type(itemText) ~= "string" then return nil end
+    local count = itemText:match(getSlotPattern())
+    return count and tonumber(count)
+end
+
 -- equipLoc, itemType, itemSubType for a link; nil when the item is not cached.
 function AP.StatScan.GetEquipInfo(itemLink)
     if type(itemLink) ~= "string" or itemLink == "" then return nil end

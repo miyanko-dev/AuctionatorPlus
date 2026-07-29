@@ -8,8 +8,8 @@ AP.Constants = {
 
 -- Persist options in AuctionatorPlusDB; loaded on PLAYER_LOGIN.
 AP.Settings = {
-    checkOtherItems = false,
-    sameStats = false,
+    showSimilarItems = false,
+    showSimilarBags = false,
 }
 
 local function ensureDB()
@@ -21,18 +21,18 @@ end
 
 function AP.LoadSettings()
     local db = ensureDB()
-    if type(db.checkOtherItems) == "boolean" then
-        AP.Settings.checkOtherItems = db.checkOtherItems
+    if type(db.showSimilarItems) == "boolean" then
+        AP.Settings.showSimilarItems = db.showSimilarItems
     end
-    if type(db.sameStats) == "boolean" then
-        AP.Settings.sameStats = db.sameStats
+    if type(db.showSimilarBags) == "boolean" then
+        AP.Settings.showSimilarBags = db.showSimilarBags
     end
 end
 
 function AP.SaveSettings()
     local db = ensureDB()
-    db.checkOtherItems = AP.Settings.checkOtherItems
-    db.sameStats = AP.Settings.sameStats
+    db.showSimilarItems = AP.Settings.showSimilarItems
+    db.showSimilarBags = AP.Settings.showSimilarBags
 end
 
 AP.Format = {}

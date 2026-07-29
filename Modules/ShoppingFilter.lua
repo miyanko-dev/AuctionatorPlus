@@ -9,8 +9,9 @@ local STAT_TOKENS = AP.StatScan.STAT_TOKENS
 local DIALOG_WIDTH = 510
 local PANEL_WIDTH = 150
 
--- Rebuild `active` from the panel on every SearchStart, so toggling a box takes effect on the next search no matter where it was triggered from.
+-- The stat filter must affect only a search launched from the advanced dialog. `pending` is armed when the dialog's search button is clicked and consumed by that search's SearchStart; a normal search leaves it nil, so it is never filtered.
 local active = nil
+local pending = nil
 
 local function readDraft(panel)
     local draft = { stats = {}, dpsMin = nil, any = false }
@@ -91,6 +92,11 @@ local function buildPanel(dialog)
     panel.dpsEdit = dpsEdit
     dialog.auctionatorPlusStatFilter = panel
 
+    -- Clear the checkboxes whenever the dialog closes, so a later normal search is never filtered by leftover boxes.
+    dialog:HookScript("OnHide", function()
+        clearControls(panel)
+    end)
+
     -- Hook the button, not ResetAll(): auto-OnShow calls ResetAll too, and only an explicit click should wipe the panel.
     if dialog.ResetAllButton then
         dialog.ResetAllButton:HookScript("OnClick", function()
@@ -156,10 +162,24 @@ hooksecurefunc(AuctionatorDirectSearchProviderMixin, "ProcessSearchResults", fun
     end
 end)
 
+-- Override, not hooksecurefunc: the draft must be captured BEFORE OnFinishedClicked hides the dialog (which clears the boxes via OnHide), and disarmed afterward if the click launched no search.
+local originalOnFinished = AuctionatorShoppingItemMixin.OnFinishedClicked
+function AuctionatorShoppingItemMixin.OnFinishedClicked(self, ...)
+    if self ~= _G.AuctionatorShoppingTabItemFrame then
+        return originalOnFinished(self, ...)
+    end
+    local panel = self.auctionatorPlusStatFilter
+    if panel then
+        local draft = readDraft(panel)
+        pending = draft.any and draft or nil
+    end
+    originalOnFinished(self, ...)
+    -- A launched search fires SearchStart synchronously above and consumes `pending`; if it survives, this finish was an edit/cancel with no search, so drop it.
+    pending = nil
+end
+
+-- Consume the advanced-search draft; a normal search leaves `pending` nil and runs unfiltered.
 AP.Bridge.Listen({ Auctionator.Shopping.Tab.Events.SearchStart }, function()
-    local dialog = _G.AuctionatorShoppingTabItemFrame
-    local panel = dialog and dialog.auctionatorPlusStatFilter
-    if not panel then active = nil; return end
-    local draft = readDraft(panel)
-    active = draft.any and draft or nil
+    active = pending
+    pending = nil
 end)

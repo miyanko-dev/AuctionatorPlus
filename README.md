@@ -5,8 +5,9 @@ A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/aucti
 ## Features
 
 - **Price-history tooltips** — item tooltips carry a **Market Value** section (one row per source: *Auctionator*, the average minimum buyout from your scans, and *TSM*, tagged with the app data's age) and a **Relative Value** section comparing the last known price against each anchor, coloured for the active view at the Auction House. Stays out of the way inside the buy detail and sell-item views.
-- **Check Similar Items** — enable the checkbox in the Selling tab. When you place a gear item to sell, a background Auction House search runs (no tab switching) for the same **slot + armor type** within **±2 of the required level**, and the matches are listed in the Selling tab's current-prices panel alongside Auctionator's usual name-based results.
-- **Same Stats** — a second checkbox next to *Check Similar Items*. When also enabled, the comparables are narrowed to items carrying the **same stats** as the item being sold (stat names, any value; DPS presence for weapons). Example: listing cloth boots with Intellect + Stamina at level 50 shows other level 48–52 cloth boots with exactly Intellect and Stamina — not ones that also have Spirit. With it off, every same-slot/armor-type/level item is shown.
+- **Show Similar Items** — a checkbox in the Selling tab, visible only while a piece of equipment sits in the sale slot. When you place gear to sell, a background Auction House search runs (no tab switching) for the same **slot + armor type** within **±2 item levels**, narrowed to items carrying the **same stats** as the item being sold (stat names, any value). Example: listing cloth boots with Intellect + Stamina shows other cloth boots within two item levels with exactly Intellect and Stamina — not ones that also have Spirit. Matches are listed in the Selling tab's current-prices panel alongside Auctionator's usual name-based results.
+- **Show Similar Bags** — the same checkbox relabelled while a bag or other container sits in the sale slot. Lists every container with the **same number of slots**, regardless of bag type (regular, soul, profession bags). For items that are neither equipment nor containers the checkbox stays hidden.
+- **Price from comparables** — hover any listed result to preview the item (bags and containers included), and click a similar item's row to take over its exact unit price as the price for the item you are listing. Clicking a row of the item itself keeps Auctionator's usual undercut behaviour.
 - **Rel. Value columns** — the shopping results and current-prices listings gain a *Rel. Value* column showing each item's price against its 21-day average minimum buyout (green when favourable for the view), so underpriced deals stand out at a glance.
 - **Filter by Stat** — the shopping tab's item dialog gains a *Filter by Stat* panel: checkboxes for the five primary stats (Strength, Agility, Stamina, Intellect, Spirit) and a *Min DPS* box. Active filters drop non-matching results from the next search; *Reset All* clears the panel along with the rest of the dialog.
 - **Green bag glow** — in the Selling tab's bag panel, items whose last known price sits above both their 21-day Auctionator average and their TSM market value get a green glow faded over their icon (the game's own `bags-glow-green`), so profitable sells stand out at a glance — including green-quality items, whose border is already green. Items missing either price signal stay unmarked.
@@ -16,7 +17,7 @@ A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/aucti
 
 ## Usage
 
-1. In the Selling tab, tick **Check Similar Items**, then drop a gear item — comparable auctions appear in its current-prices list automatically.
+1. In the Selling tab, drop a gear item or a bag and tick **Show Similar Items** / **Show Similar Bags** — comparable auctions appear in its current-prices list automatically.
 2. Hover an item to see its price history.
 3. Sort shopping results by the **Rel. Value** column to surface underpriced items.
 
