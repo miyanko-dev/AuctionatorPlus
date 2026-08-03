@@ -6,208 +6,258 @@ local STAT_ORDER = AP.StatScan.STAT_ORDER
 local STAT_LABELS = AP.StatScan.STAT_LABELS
 local STAT_TOKENS = AP.StatScan.STAT_TOKENS
 
-local DIALOG_WIDTH = 510
-local PANEL_WIDTH = 150
+local ARMOR_CLASS = Enum.ItemClass.Armor
+local BUTTON_GAP = 5
+local DIALOG_WIDTH = 210
+-- 86 ButtonFrameTemplate inset chrome + 42 dropdown row + 26 per stat row + 38 apply row keeps every control inside the inset.
+local DIALOG_HEIGHT = 86 + 42 + #STAT_ORDER * 26 + 38
 
--- The stat filter must affect only a search launched from the advanced dialog. `pending` is armed when the dialog's search button is clicked and consumed by that search's SearchStart; a normal search leaves it nil, so it is never filtered.
-local active = nil
-local pending = nil
+local filterButton, resetButton, dialog
+local provider, originalAppend
 
-local function readDraft(panel)
-    local draft = { stats = {}, dpsMin = nil, any = false, logic = panel.statLogic }
-    for _, key in ipairs(STAT_ORDER) do
-        if panel.statChecks[key]:GetChecked() then
-            draft.stats[key] = true
-            draft.any = true
-        end
+-- Every entry Auctionator appended for the current search, in arrival order, so a filter change rebuilds the visible rows without a new search.
+local allEntries = {}
+
+-- Bumps on every search start and refilter; stale item-load callbacks compare against it and drop out.
+local generation = 0
+
+local function accountDB()
+    if type(AuctionatorPlusAccountDB) ~= "table" then
+        AuctionatorPlusAccountDB = {}
     end
-    if panel.dpsCheck:GetChecked() then
-        local n = tonumber(panel.dpsEdit:GetText())
-        if n and n > 0 then
-            draft.dpsMin = n
-            draft.any = true
-        end
-    end
-    return draft
+    return AuctionatorPlusAccountDB
 end
 
-local function clearControls(panel)
-    for _, key in ipairs(STAT_ORDER) do
-        panel.statChecks[key]:SetChecked(false)
+-- Account-wide filter: { stats = { strength = true, ... }, logic = "AND"|"OR" }; nil when unset.
+local function activeFilter()
+    local filter = accountDB().shoppingStatFilter
+    if type(filter) ~= "table" or type(filter.stats) ~= "table" or not next(filter.stats) then
+        return nil
     end
-    panel.dpsCheck:SetChecked(false)
-    panel.dpsEdit:SetText("")
-    panel.statLogic = "AND"
-    -- GenerateMenu re-runs the radio setup so the button text reflects the reset value.
-    panel.logicDropdown:GenerateMenu()
+    return filter
 end
 
-local function buildPanel(dialog)
-    if dialog.auctionatorPlusStatFilter then return end
-
-    dialog:SetWidth(DIALOG_WIDTH)
-
-    local panel = CreateFrame("Frame", nil, dialog)
-    panel:SetSize(PANEL_WIDTH, 200)
-    panel:SetPoint("TOPRIGHT", dialog.Inset, "TOPRIGHT", -10, -8)
-
-    local heading = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    heading:SetPoint("TOPLEFT", 4, 0)
-    heading:SetText("Filter by Stat")
-
-    -- AND is the historical behavior, so it stays the default after every reset.
-    panel.statLogic = "AND"
-    local logicDropdown = CreateFrame("DropdownButton", nil, panel, "WowStyle1DropdownTemplate")
-    logicDropdown:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", -2, -4)
-    logicDropdown:SetWidth(120)
-    MenuUtil.CreateRadioMenu(logicDropdown,
-        function(value) return panel.statLogic == value end,
-        function(value) panel.statLogic = value end,
-        { "Match All", "AND" },
-        { "Match Any", "OR" })
-    panel.logicDropdown = logicDropdown
-
-    panel.statChecks = {}
-    local previous = logicDropdown
-    for index, key in ipairs(STAT_ORDER) do
-        local check = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-        check:SetSize(20, 20)
-        if index == 1 then
-            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", -2, -4)
-        else
-            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -2)
+-- Match by plain substring so suffix gear and equip-effect stats count; structured stat parsing silently dropped those.
+local function statsMatch(itemText, filter)
+    if filter.logic == "OR" then
+        for key in pairs(filter.stats) do
+            if itemText:find(STAT_TOKENS[key], 1, true) then return true end
         end
-        local label = check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        label:SetPoint("LEFT", check, "RIGHT", 2, 0)
-        label:SetText(STAT_LABELS[key])
-        panel.statChecks[key] = check
-        previous = check
+        return false
     end
 
-    local dpsCheck = CreateFrame("CheckButton", nil, panel, "UICheckButtonTemplate")
-    dpsCheck:SetSize(20, 20)
-    dpsCheck:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -10)
-    local dpsLabel = dpsCheck:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    dpsLabel:SetPoint("LEFT", dpsCheck, "RIGHT", 2, 0)
-    dpsLabel:SetText("Min DPS")
-
-    local dpsEdit = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
-    dpsEdit:SetSize(50, 20)
-    dpsEdit:SetPoint("LEFT", dpsLabel, "RIGHT", 10, 0)
-    dpsEdit:SetAutoFocus(false)
-    dpsEdit:SetNumeric(true)
-    dpsEdit:SetMaxLetters(4)
-    dpsEdit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-    dpsEdit:SetScript("OnEnterPressed", function(self)
-        self:ClearFocus()
-        dialog:OnFinishedClicked()
-    end)
-
-    panel.dpsCheck = dpsCheck
-    panel.dpsEdit = dpsEdit
-    dialog.auctionatorPlusStatFilter = panel
-
-    -- Clear the checkboxes whenever the dialog closes, so a later normal search is never filtered by leftover boxes.
-    dialog:HookScript("OnHide", function()
-        clearControls(panel)
-    end)
-
-    -- Hook the button, not ResetAll(): auto-OnShow calls ResetAll too, and only an explicit click should wipe the panel.
-    if dialog.ResetAllButton then
-        dialog.ResetAllButton:HookScript("OnClick", function()
-            clearControls(panel)
-        end)
+    for key in pairs(filter.stats) do
+        if not itemText:find(STAT_TOKENS[key], 1, true) then return false end
     end
-end
-
--- Keep results whose link data is not cached yet rather than drop a legitimate match: random-suffix tooltips can be sparse when CheckFilters runs; loads kicked off in ProcessSearchResults let repeat searches filter cleanly.
-function AP.ShoppingFilter.PassesFilter(resultWithKey)
-    if not active then return true end
-
-    local entries = resultWithKey and resultWithKey.entries
-    local link = entries and entries[1] and entries[1].itemLink
-    if not link then return false end
-
-    local resultItem = Item:CreateFromItemLink(link)
-    if resultItem and not resultItem:IsItemEmpty() and not resultItem:IsItemDataCached() then
-        resultItem:ContinueOnItemLoad(function() end)
-        return true
-    end
-
-    local text = AP.StatScan.ReadItemText(link)
-    if not text then return true end
-
-    -- Match by plain substring: structured stat parsing silently dropped suffix-gear and equip-effect matches.
-    if next(active.stats) then
-        if active.logic == "OR" then
-            local matched = false
-            for key in pairs(active.stats) do
-                if text:find(STAT_TOKENS[key], 1, true) then
-                    matched = true
-                    break
-                end
-            end
-            if not matched then return false end
-        else
-            for key in pairs(active.stats) do
-                if not text:find(STAT_TOKENS[key], 1, true) then return false end
-            end
-        end
-    end
-
-    if active.dpsMin then
-        local dps = AP.StatScan.ParseDPS(text)
-        if not dps or dps < active.dpsMin then return false end
-    end
-
     return true
 end
 
--- Hook the mixin table now so Mixin() copies the wrapped OnLoad onto the dialog when it is created on AH open.
-hooksecurefunc(AuctionatorShoppingItemMixin, "OnLoad", function(self)
-    if self ~= _G.AuctionatorShoppingTabItemFrame then return end
-    buildPanel(self)
-end)
+-- Whether a result row survives the filter: armor-class items with the chosen stats; rows without an item link (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills.
+local function entryMatches(entry, filter)
+    local link = entry.entries and entry.entries[1] and entry.entries[1].itemLink
+    if not link then return true, false end
 
--- Replace rather than post-hook: a failed stat/DPS check must veto the result.
-local originalCheckFilters = Auctionator.Search.CheckFilters
-Auctionator.Search.CheckFilters = function(resultWithKey, filters)
-    if not originalCheckFilters(resultWithKey, filters) then return false end
-    return AP.ShoppingFilter.PassesFilter(resultWithKey)
+    local classID = select(6, C_Item.GetItemInfoInstant(link))
+    if classID ~= ARMOR_CLASS then return false, false end
+
+    local itemText = AP.StatScan.ReadItemText(link)
+    if not itemText then return false, true end
+
+    return statsMatch(itemText, filter), false
 end
 
--- Warm the suffix-variant cache as scan pages arrive so PassesFilter sees full stat lines when AddFinalResults fires.
-hooksecurefunc(AuctionatorDirectSearchProviderMixin, "ProcessSearchResults", function(_, pageResults)
-    if type(pageResults) ~= "table" then return end
-    for _, entry in ipairs(pageResults) do
-        local link = entry.itemLink
-        if link then
-            local entryItem = Item:CreateFromItemLink(link)
-            if entryItem and not entryItem:IsItemEmpty() and not entryItem:IsItemDataCached() then
-                entryItem:ContinueOnItemLoad(function() end)
-            end
+local function updateButtonState()
+    if not filterButton then return end
+
+    local filter = activeFilter()
+    if filter then
+        local count = 0
+        for _ in pairs(filter.stats) do count = count + 1 end
+        filterButton:SetText(("Filter (%d)"):format(count))
+    else
+        filterButton:SetText("Filter")
+    end
+    DynamicResizeButton_Resize(filterButton)
+    resetButton:SetEnabled(filter ~= nil)
+end
+
+-- Re-append an uncached entry once its item data arrives, if it matches by then; the provider dedups by item key, so double appends are safe.
+local function retryOnLoad(entry)
+    local entryItem = Item:CreateFromItemLink(entry.entries[1].itemLink)
+    if entryItem:IsItemEmpty() then return end
+
+    local startedGeneration = generation
+    entryItem:ContinueOnItemLoad(function()
+        if generation ~= startedGeneration then return end
+
+        local filter = activeFilter()
+        if filter and not entryMatches(entry, filter) then return end
+        originalAppend(provider, { entry }, provider.searchCompleted)
+    end)
+end
+
+local function filterEntries(entries)
+    local filter = activeFilter()
+    if not filter then return entries end
+
+    local kept = {}
+    for _, entry in ipairs(entries) do
+        local matched, needsLoad = entryMatches(entry, filter)
+        if matched then
+            table.insert(kept, entry)
+        elseif needsLoad then
+            retryOnLoad(entry)
         end
     end
-end)
-
--- Override, not hooksecurefunc: the draft must be captured BEFORE OnFinishedClicked hides the dialog (which clears the boxes via OnHide), and disarmed afterward if the click launched no search.
-local originalOnFinished = AuctionatorShoppingItemMixin.OnFinishedClicked
-function AuctionatorShoppingItemMixin.OnFinishedClicked(self, ...)
-    if self ~= _G.AuctionatorShoppingTabItemFrame then
-        return originalOnFinished(self, ...)
-    end
-    local panel = self.auctionatorPlusStatFilter
-    if panel then
-        local draft = readDraft(panel)
-        pending = draft.any and draft or nil
-    end
-    originalOnFinished(self, ...)
-    -- A launched search fires SearchStart synchronously above and consumes `pending`; if it survives, this finish was an edit/cancel with no search, so drop it.
-    pending = nil
+    return kept
 end
 
--- Consume the advanced-search draft; a normal search leaves `pending` nil and runs unfiltered.
+-- Rebuild the visible rows from the recorded entries under the current filter; Auctionator's search stays untouched.
+local function reapplyFilter()
+    updateButtonState()
+    if not originalAppend then return end
+
+    generation = generation + 1
+    local searchWasComplete = provider.searchCompleted
+    provider:Reset()
+    originalAppend(provider, filterEntries(allEntries), searchWasComplete)
+end
+
+local function readControls()
+    local stats = {}
+    for _, key in ipairs(STAT_ORDER) do
+        if dialog.statChecks[key]:GetChecked() then
+            stats[key] = true
+        end
+    end
+
+    if not next(stats) then return nil end
+    return { stats = stats, logic = dialog.statLogic }
+end
+
+local function applyToControls(filter)
+    for _, key in ipairs(STAT_ORDER) do
+        dialog.statChecks[key]:SetChecked(filter and filter.stats[key])
+    end
+    dialog.statLogic = filter and filter.logic or "AND"
+    -- GenerateMenu re-runs the radio setup so the button text reflects the applied value.
+    dialog.logicDropdown:GenerateMenu()
+end
+
+local function buildDialog()
+    dialog = CreateFrame("Frame", "AuctionatorPlusStatFilterDialog", _G.AuctionatorShoppingFrame, "ButtonFrameTemplate")
+    ButtonFrameTemplate_HidePortrait(dialog)
+    dialog:SetSize(DIALOG_WIDTH, DIALOG_HEIGHT)
+    dialog:SetPoint("CENTER")
+    dialog:SetFrameStrata("DIALOG")
+    dialog:SetTitle("Stat Filter")
+    dialog:EnableMouse(true)
+    tinsert(UISpecialFrames, dialog:GetName())
+
+    dialog.statLogic = "AND"
+    local logicDropdown = CreateFrame("DropdownButton", nil, dialog, "WowStyle1DropdownTemplate")
+    logicDropdown:SetPoint("TOPLEFT", dialog.Inset, "TOPLEFT", 12, -12)
+    logicDropdown:SetWidth(120)
+    MenuUtil.CreateRadioMenu(logicDropdown,
+        function(value) return dialog.statLogic == value end,
+        function(value) dialog.statLogic = value end,
+        { "Match All", "AND" },
+        { "Match Any", "OR" })
+    dialog.logicDropdown = logicDropdown
+
+    dialog.statChecks = {}
+    local previous = logicDropdown
+    for index, key in ipairs(STAT_ORDER) do
+        local check = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+        check:SetSize(24, 24)
+        if index == 1 then
+            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", -2, -6)
+        else
+            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -2)
+        end
+
+        local label = check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        label:SetPoint("LEFT", check, "RIGHT", 2, 0)
+        label:SetText(STAT_LABELS[key])
+
+        dialog.statChecks[key] = check
+        previous = check
+    end
+
+    local applyButton = CreateFrame("Button", nil, dialog, "UIPanelDynamicResizeButtonTemplate")
+    applyButton:SetText("Apply")
+    DynamicResizeButton_Resize(applyButton)
+    applyButton:SetPoint("BOTTOMRIGHT", dialog.Inset, "BOTTOMRIGHT", -10, 10)
+    applyButton:SetScript("OnClick", function()
+        accountDB().shoppingStatFilter = readControls()
+        dialog:Hide()
+        reapplyFilter()
+    end)
+
+    dialog:SetScript("OnShow", function()
+        applyToControls(activeFilter())
+    end)
+
+    -- Frames spawn visible; start hidden so the Filter button's first toggle shows the dialog.
+    dialog:Hide()
+end
+
+local function ensureButtons()
+    if filterButton then return true end
+
+    -- Parent to the full-scan button so both filter buttons follow its bottom-row spot and hide with it behind the buy screen.
+    local fullScan = AP.fullScanShoppingButton
+    if not fullScan then return false end
+
+    filterButton = CreateFrame("Button", nil, fullScan, "UIPanelDynamicResizeButtonTemplate")
+    filterButton:SetPoint("LEFT", fullScan, "RIGHT", BUTTON_GAP, 0)
+    filterButton:SetScript("OnClick", function()
+        if not dialog then buildDialog() end
+        dialog:SetShown(not dialog:IsShown())
+    end)
+
+    resetButton = CreateFrame("Button", nil, fullScan, "UIPanelDynamicResizeButtonTemplate")
+    resetButton:SetText("Reset Filter")
+    DynamicResizeButton_Resize(resetButton)
+    resetButton:SetPoint("LEFT", filterButton, "RIGHT", BUTTON_GAP, 0)
+    resetButton:SetScript("OnClick", function()
+        accountDB().shoppingStatFilter = nil
+        if dialog then dialog:Hide() end
+        reapplyFilter()
+    end)
+
+    updateButtonState()
+    return true
+end
+
+-- Instance wrap, not a mixin hook: record the unfiltered entries and forward only survivors, leaving Auctionator's search pipeline untouched.
+local function installProviderFilter()
+    if originalAppend then return true end
+
+    local shoppingFrame = _G.AuctionatorShoppingFrame
+    provider = shoppingFrame and shoppingFrame.DataProvider
+    if not provider or type(provider.AppendEntries) ~= "function" then return false end
+
+    originalAppend = provider.AppendEntries
+    provider.AppendEntries = function(self, entries, isLastSet)
+        for _, entry in ipairs(entries) do
+            table.insert(allEntries, entry)
+        end
+        return originalAppend(self, filterEntries(entries), isLastSet)
+    end
+    return true
+end
+
 AP.Bridge.Listen({ Auctionator.Shopping.Tab.Events.SearchStart }, function()
-    active = pending
-    pending = nil
+    generation = generation + 1
+    allEntries = {}
 end)
+
+function AP.ShoppingFilter.Ensure()
+    -- Legacy per-term store from the removed shopping-list integration.
+    accountDB().statFilters = nil
+
+    local buttonsReady = ensureButtons()
+    local providerReady = installProviderFilter()
+    return buttonsReady and providerReady
+end

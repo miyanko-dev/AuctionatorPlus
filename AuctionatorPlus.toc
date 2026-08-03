@@ -5,8 +5,9 @@
 ## Author: MIYANKO
 ## Version: 2.0.0
 ## Dependencies: Auctionator
+## SavedVariables: AuctionatorPlusAccountDB
 ## SavedVariablesPerCharacter: AuctionatorPlusDB
-## IconTexture: 132112
+## IconTexture: 133784
 
 Modules\Init.lua
 Modules\Bridge.lua

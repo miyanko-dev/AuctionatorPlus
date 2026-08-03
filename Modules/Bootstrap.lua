@@ -40,7 +40,8 @@ local function ensureButtons(attempt)
     local buyHooked = fullScanReady and hookBuyFrameVisibility()
     local watchReady = AP.SellingWatch.Ensure()
     local saleScanReady = AP.SaleScan.Ensure()
-    if (fullScanReady and buyHooked and watchReady and saleScanReady) or attempt > 20 then return end
+    local filterReady = AP.ShoppingFilter.Ensure()
+    if (fullScanReady and buyHooked and watchReady and saleScanReady and filterReady) or attempt > 20 then return end
     C_Timer.After(0.5, function() ensureButtons(attempt + 1) end)
 end
 

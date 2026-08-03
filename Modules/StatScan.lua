@@ -34,6 +34,8 @@ function AP.StatScan.ReadItemText(itemLink)
     if type(itemLink) ~= "string" or itemLink == "" then return nil end
 
     local tip = ensureScanTooltip()
+    -- Re-own every scan: SetHyperlink can no-op on a tooltip already showing the same link.
+    tip:SetOwner(WorldFrame, "ANCHOR_NONE")
     tip:ClearLines()
     tip:SetHyperlink(itemLink)
 
@@ -58,12 +60,16 @@ function AP.StatScan.ReadItemText(itemLink)
     return table.concat(parts, "\n"):lower()
 end
 
--- Primary stats present on an item by plain substring match, robust to "+N Stat" and "Equip: ... Stat by N" forms.
+-- Primary stats present on an item, robust to "+N Stat" and "Equip: ... Stat by N" forms. Only digit-bearing lines count, so item names like "Staff of Agility" never register as stats.
 function AP.StatScan.PrimaryStatSet(itemText)
     local present = {}
     if type(itemText) ~= "string" then return present end
-    for key, token in pairs(STAT_TOKENS) do
-        if itemText:find(token, 1, true) then present[key] = true end
+    for line in itemText:gmatch("[^\n]+") do
+        if line:find("%d") then
+            for key, token in pairs(STAT_TOKENS) do
+                if line:find(token, 1, true) then present[key] = true end
+            end
+        end
     end
     return present
 end
@@ -73,31 +79,6 @@ function AP.StatScan.SameStatSet(a, b)
     for key in pairs(a) do if not b[key] then return false end end
     for key in pairs(b) do if not a[key] then return false end end
     return true
-end
-
--- Localized DPS phrase (e.g. "damage per second") from DPS_TEMPLATE, placeholder and parentheses stripped.
-local dpsPhrase
-local function getDpsPhrase()
-    if dpsPhrase == nil then
-        local template = _G.DPS_TEMPLATE
-        if type(template) == "string" then
-            dpsPhrase = strtrim((template:gsub("%%s", ""):gsub("[%(%)]", ""))):lower()
-        else
-            dpsPhrase = ""
-        end
-    end
-    return dpsPhrase
-end
-
--- Weapon DPS from the tooltip ("(37.5 damage per second)"), rounded so values compare cleanly; nil without a DPS line.
-function AP.StatScan.ParseDPS(itemText)
-    if type(itemText) ~= "string" then return nil end
-    local phrase = getDpsPhrase()
-    if phrase == "" then return nil end
-    local number = itemText:match("([%d%.]+)%s+" .. phrase)
-    local dps = number and tonumber(number)
-    if not dps or dps <= 0 then return nil end
-    return math.floor(dps + 0.5)
 end
 
 -- Lowercased match pattern built from CONTAINER_SLOTS ("%d Slot %s"), so bag tooltips parse in any locale.

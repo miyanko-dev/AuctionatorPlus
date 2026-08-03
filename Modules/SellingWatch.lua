@@ -12,14 +12,11 @@ local NON_GEAR_SLOTS = {
     INVTYPE_NON_EQUIP_IGNORE = true,
 }
 
--- Body-armor slots carry an armor-type distinction; cloak, neck, finger and trinket are wearable by all classes, so they are excluded.
-local BODY_ARMOR_SLOTS = {
-    INVTYPE_HEAD = true, INVTYPE_SHOULDER = true, INVTYPE_CHEST = true,
-    INVTYPE_ROBE = true, INVTYPE_WAIST = true, INVTYPE_LEGS = true,
-    INVTYPE_FEET = true, INVTYPE_WRIST = true, INVTYPE_HAND = true,
-}
-
-local ITEM_LEVEL_RANGE = 2
+-- Robes and chest pieces share the chest slot; treat them as one for slot comparison.
+local function normalizeSlot(equipLoc)
+    if equipLoc == "INVTYPE_ROBE" then return "INVTYPE_CHEST" end
+    return equipLoc
+end
 
 -- Absorb the burst of StartFakeBuyLoading repeats one placement fires, but re-run on a genuine re-drop.
 local REDROP_DEBOUNCE = 1.0
@@ -40,7 +37,7 @@ local scanListener
 local CHECKBOX_TEXT = {
     gear = {
         label = "Show Similar Items",
-        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor type within 2 item levels that carry the same stats as the item being sold. Stat values are ignored. Click a similar auction to take its unit price for your listing.",
+        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor or weapon type with the same required level that carry the same stats as the item being sold. Stat values are ignored. Click a similar auction to take its unit price for your listing.",
     },
     bag = {
         label = "Show Similar Bags",
@@ -103,19 +100,16 @@ local function trackSaleItem(itemLink)
     end)
 end
 
--- Compare weapons by weapon type only (restricted server-side via the category); narrow armor by slot, plus armor type for body slots.
-local function buildFilter(classID, equipLoc, itemSubType)
-    local filter = {}
-    if classID ~= Enum.ItemClass.Weapon then
-        filter.equipLoc = equipLoc
-        if BODY_ARMOR_SLOTS[equipLoc] then
-            filter.armorSubType = itemSubType
-        end
-    end
-    return filter
+-- Same slot, same armor or weapon type and the exact same required level; the stat set compares against the tooltip later.
+local function buildFilter(itemLink, equipLoc, itemSubType)
+    return {
+        equipLoc = normalizeSlot(equipLoc),
+        subType = itemSubType,
+        requiredLevel = select(5, C_Item.GetItemInfo(itemLink)) or 0,
+    }
 end
 
--- classID + Auctionator categoryKey, slot-scoped where the category tree has the slot ("Armor/Mail/Hands"), otherwise class/subclass ("Weapon/Daggers").
+-- Auctionator categoryKey, slot-scoped where the category tree has the slot ("Armor/Mail/Hands"), otherwise class/subclass ("Weapon/Daggers").
 local function categoryForItem(itemLink, equipLoc)
     local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemLink)
     if not classID then return nil end
@@ -134,7 +128,7 @@ local function categoryForItem(itemLink, equipLoc)
             categoryKey = withSlot
         end
     end
-    return classID, categoryKey
+    return categoryKey
 end
 
 -- Build the comparison profile for the dropped sale item, synchronous since the slotted item is cached; nil for unsupported items.
@@ -159,26 +153,19 @@ local function profileForItem(itemLink)
     if kind ~= "gear" then return nil end
     local equipLoc, _, itemSubType = AP.StatScan.GetEquipInfo(itemLink)
     if not equipLoc then return nil end
-    local classID, categoryKey = categoryForItem(itemLink, equipLoc)
+    local categoryKey = categoryForItem(itemLink, equipLoc)
     if not categoryKey then return nil end
-
-    local filter = buildFilter(classID, equipLoc, itemSubType)
-    local itemLevel = select(4, C_Item.GetItemInfo(itemLink)) or 0
-    if itemLevel > 0 then
-        filter.minItemLevel = itemLevel - ITEM_LEVEL_RANGE
-        filter.maxItemLevel = itemLevel + ITEM_LEVEL_RANGE
-    end
 
     return {
         kind = kind,
         itemLink = itemLink,
         categoryKey = categoryKey,
-        filter = filter,
+        filter = buildFilter(itemLink, equipLoc, itemSubType),
         statSet = AP.StatScan.PrimaryStatSet(AP.StatScan.ReadItemText(itemLink)),
     }
 end
 
--- Gear must sit in the same slot/armor type, within the item-level window, and carry the same primary-stat set; bags must hold the same number of slots.
+-- Gear must sit in the same slot with the same armor or weapon type, require the exact same level and carry the same primary-stat set; bags must hold the same number of slots.
 local function matchesProfile(pending, itemLink)
     local itemText = AP.StatScan.ReadItemText(itemLink)
 
@@ -188,14 +175,9 @@ local function matchesProfile(pending, itemLink)
 
     local filter = pending.filter
     local equipLoc, _, subType = AP.StatScan.GetEquipInfo(itemLink)
-    if filter.equipLoc and equipLoc ~= filter.equipLoc then return false end
-    if filter.armorSubType and subType ~= filter.armorSubType then return false end
-    if filter.minItemLevel then
-        local itemLevel = select(4, C_Item.GetItemInfo(itemLink))
-        if not itemLevel or itemLevel < filter.minItemLevel or itemLevel > filter.maxItemLevel then
-            return false
-        end
-    end
+    if normalizeSlot(equipLoc) ~= filter.equipLoc then return false end
+    if subType ~= filter.subType then return false end
+    if (select(5, C_Item.GetItemInfo(itemLink)) or 0) ~= filter.requiredLevel then return false end
     return AP.StatScan.SameStatSet(AP.StatScan.PrimaryStatSet(itemText), pending.statSet)
 end
 
@@ -303,8 +285,12 @@ local function runComparableSearch(pending)
     watch.scanToken = pending.token
     Auctionator.EventBus:Register(scanListener, scanEvents())
 
+    -- The legacy query's level range filters by required level server-side; zero means "no requirement" and cannot be expressed there, so it stays a client-side check.
+    local requiredLevel = pending.filter and pending.filter.requiredLevel or 0
     local ok = pcall(Auctionator.AH.QueryAuctionItems, {
         searchString = "",
+        minLevel = requiredLevel > 0 and requiredLevel or nil,
+        maxLevel = requiredLevel > 0 and requiredLevel or nil,
         itemClassFilters = Auctionator.Search.GetItemClassCategories(pending.categoryKey) or {},
         isExact = false,
     })
