@@ -14,7 +14,7 @@ local TIER_GLOW = {
 local function classify(itemLink)
     local price = AP.Bridge.AuctionPrice(itemLink)
     local localPct = AP.Trend.Percent(price, AP.Trend.AverageFor(itemLink))
-    local tsmPct = AP.Trend.Percent(price, AP.TSMFeed and AP.TSMFeed.MarketValueForLink(itemLink))
+    local tsmPct = AP.Trend.Percent(price, AP.TSMFeed and AP.TSMFeed.SmoothedValueForLink(itemLink))
 
     local localStrong = localPct ~= nil and localPct >= STRONG_PCT
     local tsmStrong = tsmPct ~= nil and tsmPct >= STRONG_PCT

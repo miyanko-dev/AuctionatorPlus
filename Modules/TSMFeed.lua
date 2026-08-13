@@ -10,7 +10,6 @@ local STAT_TAG = "AUCTIONDB_NON_COMMODITY_SCAN_STAT"
 local captured = {}  -- raw payload strings per tag, current realm only
 local feed = {
     marketValue = nil,   -- [dbKey] = smoothed market value (copper)
-    recent = nil,        -- [dbKey] = recent market value, fallback source
     downloadTime = nil,  -- unix time the app downloaded the snapshot
 }
 
@@ -101,22 +100,6 @@ local function decodeRows(payload, handler)
 end
 
 local function decodeCaptured()
-    if captured[DATA_TAG] then
-        local recent = {}
-        local downloadTime, fields = decodeRows(captured[DATA_TAG], function(dbKey, values)
-            recent[dbKey] = values
-        end)
-        if downloadTime then
-            feed.downloadTime = downloadTime
-            if fields.marketValueRecent then
-                for dbKey, values in pairs(recent) do
-                    recent[dbKey] = values[fields.marketValueRecent]
-                end
-                feed.recent = recent
-            end
-        end
-    end
-
     if captured[STAT_TAG] then
         local marketValue = {}
         local downloadTime, fields = decodeRows(captured[STAT_TAG], function(dbKey, values)
@@ -127,6 +110,15 @@ local function decodeCaptured()
                 marketValue[dbKey] = values[fields.marketValue]
             end
             feed.marketValue = marketValue
+            feed.downloadTime = downloadTime
+        end
+    end
+
+    -- Prefer the data payload's stamp for the age: the app updates it every sync while the scan stat lags hours behind, and TSM itself reports this time.
+    if captured[DATA_TAG] then
+        local downloadTime = parseMetadata(captured[DATA_TAG])
+        if downloadTime and downloadTime > (feed.downloadTime or 0) then
+            feed.downloadTime = downloadTime
         end
     end
 
@@ -135,39 +127,39 @@ end
 
 -- ===== Public accessors =====
 function AP.TSMFeed.HasData()
-    return feed.marketValue ~= nil or feed.recent ~= nil
+    return feed.marketValue ~= nil
+end
+
+-- Age of the app snapshot in seconds; nil without data.
+function AP.TSMFeed.AgeSeconds()
+    if not feed.downloadTime then return nil end
+    return math.max(time() - feed.downloadTime, 0)
 end
 
 -- Age of the app snapshot as short text ("3h" / "2d"); nil without data.
 function AP.TSMFeed.AgeText()
-    if not feed.downloadTime then return nil end
-    local age = time() - feed.downloadTime
-    if age < 0 then age = 0 end
+    local age = AP.TSMFeed.AgeSeconds()
+    if not age then return nil end
     if age < 3600 then return math.floor(age / 60) .. "m" end
     if age < 86400 then return math.floor(age / 3600) .. "h" end
     return math.floor(age / 86400) .. "d"
 end
 
--- Smoothed TSM market value for an Auctionator db key; falls back to the snapshot's recent value when no scan-stat payload arrived.
-function AP.TSMFeed.MarketValue(dbKey)
-    if type(dbKey) ~= "string" then return nil end
-    local value = feed.marketValue and feed.marketValue[dbKey]
-    if not value then
-        value = feed.recent and feed.recent[dbKey]
-    end
-    if value and value > 0 then return value end
-    return nil
-end
-
--- Market value for an item link, most specific db key first; suffixed gear pools into its base item because TSM ships plain item IDs on this client.
-function AP.TSMFeed.MarketValueForLink(itemLink)
+-- Look up a link in one value table, most specific db key first; suffixed gear pools into its base item because TSM ships plain item IDs on this client.
+local function valueForLink(values, itemLink)
+    if not values then return nil end
     local dbKeys = AP.Bridge.DBKeysForLink(itemLink)
     if not dbKeys then return nil end
     for _, dbKey in ipairs(dbKeys) do
-        local value = AP.TSMFeed.MarketValue(dbKey)
-        if value then return value end
+        local value = values[dbKey]
+        if value and value > 0 then return value end
     end
     return nil
+end
+
+-- 14-day smoothed market value; nil when no scan-stat payload arrived.
+function AP.TSMFeed.SmoothedValueForLink(itemLink)
+    return valueForLink(feed.marketValue, itemLink)
 end
 
 -- ===== Events =====

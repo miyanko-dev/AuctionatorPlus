@@ -3,7 +3,7 @@ local _, AP = ...
 AP.Constants = {
     CallerID = "AuctionatorPlus",
 
-    HistoryWindowDays = 21,  -- matches Auctionator's default price-history retention
+    HistoryWindowDays = 14,  -- keeps the local average comparable to TSM's 14-day market value
 }
 
 -- Persist options in AuctionatorPlusDB; loaded on PLAYER_LOGIN.

@@ -5,10 +5,7 @@ AP.Trend = {}
 AP.Tooltip = {}
 
 -- ===== Price-history statistics =====
-local MAD_SCALE          = 1.4826 -- scales MAD to match a standard deviation
-local OUTLIER_CUTOFF     = 3      -- drop days beyond this many scaled MADs
-local MIN_FILTER_SAMPLES = 4      -- fewer days cannot tell an outlier apart
-local MAD_FLOOR_PCT      = 0.05   -- flat markets keep ordinary wiggle
+local MIN_TRIM_SAMPLES = 8 -- below this a quartile trim is too thin to stop same-side freak days, the median is safer
 
 local function medianOf(sorted)
     local count = #sorted
@@ -19,27 +16,20 @@ local function medianOf(sorted)
     return sorted[mid + 1]
 end
 
--- Anchor the outlier filter on the median: one freak day cannot move it, unlike a mean/stdev cutoff.
-local function filterOutliers(prices)
-    if #prices < MIN_FILTER_SAMPLES then return prices end
-
+-- Interquartile mean of daily prices: dropping the cheapest and priciest quarter removes dump days and thin-supply days by construction, with no tuning constants to misjudge a market.
+local function interquartileMean(prices)
     table.sort(prices)
-    local median = medianOf(prices)
-
-    local deviations = {}
-    for index, price in ipairs(prices) do
-        deviations[index] = math.abs(price - median)
+    if #prices < MIN_TRIM_SAMPLES then
+        return medianOf(prices)
     end
-    table.sort(deviations)
-    local mad = math.max(medianOf(deviations) * MAD_SCALE, median * MAD_FLOOR_PCT)
 
-    local kept = {}
-    for _, price in ipairs(prices) do
-        if math.abs(price - median) <= OUTLIER_CUTOFF * mad then
-            kept[#kept + 1] = price
-        end
+    local trim = math.floor(#prices * 0.25)
+    local total, count = 0, 0
+    for index = trim + 1, #prices - trim do
+        total = total + prices[index]
+        count = count + 1
     end
-    return kept
+    return total / count
 end
 
 -- Match Auctionator's day index (days since SCAN_DAY_0), as carried by each entry's rawDay.
@@ -68,16 +58,10 @@ function AP.History.Compute(dbKey)
 
     if #recent == 0 then return nil end
 
-    local kept = filterOutliers(recent)
-
-    local minSum = 0
-    for _, minSeen in ipairs(kept) do
-        minSum = minSum + minSeen
-    end
-    local mean = minSum / #kept
-
+    -- sampleDays lets the signal cap its confidence on thin history.
     return {
-        averageMinBuyout = math.floor(mean + 0.5),
+        averageMinBuyout = math.floor(interquartileMean(recent) + 0.5),
+        sampleDays = #recent,
     }
 end
 
@@ -133,6 +117,100 @@ function AP.Trend.Colorize(pct, mode)
     return color:WrapTextInColorCode(text)
 end
 
+-- ===== Buy/sell signal =====
+AP.Signal = {}
+
+local STALE_FEED_SECONDS = 86400 -- halve the TSM weight past this snapshot age
+local MIN_STRONG_SAMPLES = 4     -- fewer scan days cap the verdict below Strong
+local ARTIFACT_DEVIATION = 2.0   -- an auction price this far above fair value is bad data more often than a sell opportunity
+local DISAGREE_GAP       = 0.25  -- 14-day baselines further apart mark the verdict uncertain
+
+-- Weighted fair value over the available baselines, renormalized when sources are missing; nil when none exist.
+local function fairValueOf(average, tsmMarket)
+    local tsmScale = 1
+    local age = AP.TSMFeed and AP.TSMFeed.AgeSeconds()
+    if age and age > STALE_FEED_SECONDS then
+        tsmScale = 0.5
+    end
+
+    local total, weight = 0, 0
+    if average then
+        total, weight = total + average * 0.5, weight + 0.5
+    end
+    if tsmMarket then
+        total, weight = total + tsmMarket * 0.5 * tsmScale, weight + 0.5 * tsmScale
+    end
+    if weight == 0 then return nil end
+    return total / weight
+end
+
+-- Verdict table {verdict, pct, uncertain} from the tooltip's price inputs; nil without a current price and at least one baseline.
+function AP.Signal.Compute(inputs)
+    local auction = inputs.auction
+    if not auction then return nil end
+
+    -- Buying at or below the vendor price is arithmetic profit, no market data needed.
+    if inputs.vendor and auction <= inputs.vendor then
+        return { verdict = "Strong Buy" }
+    end
+
+    local fair = fairValueOf(inputs.average, inputs.tsmMarket)
+    if not fair then return nil end
+
+    local fvd = (auction - fair) / fair
+
+    if fvd > ARTIFACT_DEVIATION then
+        return { verdict = "Hold", pct = fvd, uncertain = true }
+    end
+
+    local verdict
+    if fvd <= -0.20 then
+        verdict = "Strong Buy"
+    elseif fvd <= -0.10 then
+        verdict = "Buy"
+    elseif fvd < 0.15 then
+        verdict = "Hold"
+    elseif fvd <= 0.30 then
+        verdict = "Sell"
+    else
+        verdict = "Strong Sell"
+    end
+
+    -- Thin local history caps confidence below Strong.
+    if (inputs.sampleDays or 0) < MIN_STRONG_SAMPLES then
+        if verdict == "Strong Buy" then verdict = "Buy" end
+        if verdict == "Strong Sell" then verdict = "Sell" end
+    end
+
+    -- Two robust 14-day baselines far apart signal a regime change or manipulation, not noise.
+    local uncertain = false
+    if inputs.average and inputs.tsmMarket then
+        local gap = math.abs(inputs.average - inputs.tsmMarket) / math.max(inputs.average, inputs.tsmMarket)
+        uncertain = gap > DISAGREE_GAP
+    end
+
+    return { verdict = verdict, pct = fvd, uncertain = uncertain }
+end
+
+-- "Strong Buy (-34%)" colored by direction; vendor-floor verdicts carry no percent, uncertain ones a "?".
+function AP.Signal.Format(signal)
+    local text = signal.verdict
+    if signal.uncertain then
+        text = text .. "?"
+    end
+    if signal.pct then
+        text = string.format("%s (%+d%%)", text, math.floor(signal.pct * 100 + 0.5))
+    end
+
+    local color = WHITE_FONT_COLOR
+    if string.find(signal.verdict, "Buy") then
+        color = GREEN_FONT_COLOR
+    elseif string.find(signal.verdict, "Sell") then
+        color = RED_FONT_COLOR
+    end
+    return color:WrapTextInColorCode(text)
+end
+
 -- ===== Item tooltip lines =====
 -- Reverse the colours in buying views (a price increase is bad for a buyer); IsVisible so a deselected Auctionator tab does not register as active.
 function AP.Tooltip.TrendMode()
@@ -145,45 +223,59 @@ function AP.Tooltip.TrendMode()
     return AP.Trend.UP_GREEN
 end
 
--- Add a Market Value and a Relative Value section, one row per source (Auctionator scans, TSM app feed); sources without data skip their rows.
+-- Add an Item Value and a Price Trend section, then the buy/sell signal as its own closing label; rows without data stay silent, Auctionator's own vendor and auction lines are left untouched.
 function AP.Tooltip.Apply(tooltip, itemLink)
     if not tooltip or not itemLink then return end
 
+    local auction = AP.Bridge.AuctionPrice(itemLink)
     local stats = AP.History.ComputeForLink(itemLink)
-    local tsmValue = AP.TSMFeed and AP.TSMFeed.MarketValueForLink(itemLink)
-    if not stats and not tsmValue then return end
+    local average = stats and stats.averageMinBuyout
+    local tsmMarket = AP.TSMFeed and AP.TSMFeed.SmoothedValueForLink(itemLink)
 
+    if not (average or tsmMarket) then return end
+
+    -- Tag the TSM row with the app snapshot age so stale data is visible at a glance.
     local tsmLabel = "TSM"
     local age = AP.TSMFeed and AP.TSMFeed.AgeText()
     if age then
-        tsmLabel = tsmLabel .. " (" .. age .. ")"
+        tsmLabel = "TSM (" .. age .. ")"
     end
+
+    local mode = AP.Tooltip.TrendMode()
+    local trendLocal = AP.Trend.Colorize(AP.Trend.Percent(auction, average), mode)
+    local trendMarket = AP.Trend.Colorize(AP.Trend.Percent(auction, tsmMarket), mode)
+
+    local function addRow(label, text)
+        if text then
+            tooltip:AddDoubleLine(label, text, 1, 1, 1, 1, 1, 1)
+        end
+    end
+
+    -- Vendor price only backs the signal's floor rule, Auctionator renders its own vendor line.
+    local vendor = select(11, GetItemInfo(itemLink))
+    local signal = AP.Signal.Compute({
+        auction = auction,
+        vendor = vendor and vendor > 0 and vendor or nil,
+        average = average,
+        sampleDays = stats and stats.sampleDays,
+        tsmMarket = tsmMarket,
+    })
 
     tooltip:AddLine(" ")
-    tooltip:AddLine("Market Value", NORMAL_FONT_COLOR:GetRGB())
-    if stats then
-        tooltip:AddDoubleLine(
-            "Auctionator", AP.Format.Money(stats.averageMinBuyout), 1, 1, 1, 1, 1, 1)
-    end
-    if tsmValue then
-        tooltip:AddDoubleLine(tsmLabel, AP.Format.Money(tsmValue), 1, 1, 1, 1, 1, 1)
-    end
+    tooltip:AddLine("Item Value", NORMAL_FONT_COLOR:GetRGB())
+    addRow("Auctionator", average and AP.Format.Money(average))
+    addRow(tsmLabel, tsmMarket and AP.Format.Money(tsmMarket))
 
-    local price = AP.Bridge.AuctionPrice(itemLink)
-    local mode = AP.Tooltip.TrendMode()
-    local localPct = stats and AP.Trend.Colorize(
-        AP.Trend.Percent(price, stats.averageMinBuyout), mode)
-    local tsmPct = tsmValue and AP.Trend.Colorize(AP.Trend.Percent(price, tsmValue), mode)
-
-    if localPct or tsmPct then
+    if trendLocal or trendMarket then
         tooltip:AddLine(" ")
-        tooltip:AddLine("Relative Value", NORMAL_FONT_COLOR:GetRGB())
-        if localPct then
-            tooltip:AddDoubleLine("Auctionator", localPct, 1, 1, 1, 1, 1, 1)
-        end
-        if tsmPct then
-            tooltip:AddDoubleLine("TSM", tsmPct, 1, 1, 1, 1, 1, 1)
-        end
+        tooltip:AddLine("Price Trend", NORMAL_FONT_COLOR:GetRGB())
+        addRow("Auctionator", trendLocal)
+        addRow("TSM", trendMarket)
+    end
+
+    if signal then
+        tooltip:AddLine(" ")
+        tooltip:AddLine(AP.Signal.Format(signal))
     end
 
     -- Trigger a resize so newly added lines render inside the tooltip frame.
