@@ -74,7 +74,60 @@ function AP.StatScan.PrimaryStatSet(itemText)
     return present
 end
 
--- True when two primary-stat sets contain exactly the same stats (values ignored).
+-- Spell schools as they appear in era school-damage and resistance tooltip lines.
+local SPELL_SCHOOLS = { "arcane", "fire", "frost", "holy", "nature", "shadow" }
+
+-- Secondary stats detected by presence; wordings verified against era client data (build 1.15.9), English clients only since equip-effect text has no localized globals.
+local SECONDARY_TOKENS = {
+    spellpower  = "magical spells",
+    healing     = "healing done by spells",
+    defense     = "defense",
+    dodge       = "chance to dodge",
+    parry       = "chance to parry",
+    block       = "chance to block",
+    mp5         = "mana per 5 sec",
+    hp5         = "health per 5 sec",
+}
+
+local function addSecondaryStats(line, present)
+    for key, token in pairs(SECONDARY_TOKENS) do
+        if line:find(token, 1, true) then present[key] = true end
+    end
+
+    for _, school in ipairs(SPELL_SCHOOLS) do
+        if line:find("damage done by " .. school .. " spells", 1, true) then
+            present[school .. "damage"] = true
+        end
+        if line:find(school .. " resistance", 1, true) then
+            present[school .. "resistance"] = true
+        end
+    end
+
+    -- Split ranged from melee attack power, and crit and hit into melee and spell keys, off their shared phrases.
+    if line:find("attack power", 1, true) then
+        present[line:find("ranged", 1, true) and "rangedattackpower" or "attackpower"] = true
+    end
+    if line:find("critical strike", 1, true) then
+        present[line:find("spells", 1, true) and "spellcrit" or "crit"] = true
+    end
+    if line:find("chance to hit", 1, true) then
+        present[line:find("spells", 1, true) and "spellhit" or "hit"] = true
+    end
+end
+
+-- Full stat presence set: primary stats plus attack power, school spell damage, crit, hit and the other era secondary stats.
+function AP.StatScan.FullStatSet(itemText)
+    local present = AP.StatScan.PrimaryStatSet(itemText)
+    if type(itemText) ~= "string" then return present end
+    for line in itemText:gmatch("[^\n]+") do
+        if line:find("%d") then
+            addSecondaryStats(line, present)
+        end
+    end
+    return present
+end
+
+-- True when two stat sets contain exactly the same stats (values ignored).
 function AP.StatScan.SameStatSet(a, b)
     for key in pairs(a) do if not b[key] then return false end end
     for key in pairs(b) do if not a[key] then return false end end
@@ -101,6 +154,28 @@ function AP.StatScan.ParseSlotCount(itemText)
     if type(itemText) ~= "string" then return nil end
     local count = itemText:match(getSlotPattern())
     return count and tonumber(count)
+end
+
+-- Lowercased match pattern built from DPS_TEMPLATE ("(%s damage per second)"), so weapon tooltips parse in any locale.
+local dpsPattern
+local function getDpsPattern()
+    if dpsPattern == nil then
+        local template = _G.DPS_TEMPLATE
+        if type(template) == "string" then
+            dpsPattern = template:lower():gsub("[%(%)%.%+%-%*%?%[%]%^%$]", "%%%0")
+            dpsPattern = dpsPattern:gsub("%%%d?%$?s", "([%%d%%.,]+)")
+        else
+            dpsPattern = "%(([%d%.,]+) damage per second%)"
+        end
+    end
+    return dpsPattern
+end
+
+-- Weapon damage per second from the tooltip line ("(10.5 damage per second)"), tolerant of comma decimals; nil when no such line exists.
+function AP.StatScan.ParseDPS(itemText)
+    if type(itemText) ~= "string" then return nil end
+    local value = itemText:match(getDpsPattern())
+    return value and tonumber((value:gsub(",", ".")))
 end
 
 -- equipLoc, itemType, itemSubType for a link; nil when the item is not cached.

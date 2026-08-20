@@ -2,15 +2,39 @@ local _, AP = ...
 
 AP.ShoppingFilter = {}
 
-local STAT_ORDER = AP.StatScan.STAT_ORDER
-local STAT_LABELS = AP.StatScan.STAT_LABELS
-local STAT_TOKENS = AP.StatScan.STAT_TOKENS
+-- Filterable stats in dialog order, physical column first; every key matches AP.StatScan.FullStatSet.
+local FILTER_ORDER = {
+    "strength", "agility", "stamina", "intellect", "spirit",
+    "attackpower", "rangedattackpower", "hit", "crit",
+    "spellhit", "spellcrit",
+    "arcanedamage", "firedamage", "frostdamage", "holydamage", "naturedamage", "shadowdamage",
+}
 
-local ARMOR_CLASS = Enum.ItemClass.Armor
+local FILTER_LABELS = {
+    attackpower = "Attack Power",
+    rangedattackpower = "Ranged Attack Power",
+    hit = "Hit Chance",
+    crit = "Crit Chance",
+    spellhit = "Spell Hit Chance",
+    spellcrit = "Spell Crit Chance",
+    arcanedamage = "Arcane Spell Power",
+    firedamage = "Fire Spell Power",
+    frostdamage = "Frost Spell Power",
+    holydamage = "Holy Spell Power",
+    naturedamage = "Nature Spell Power",
+    shadowdamage = "Shadow Spell Power",
+}
+for key, label in pairs(AP.StatScan.STAT_LABELS) do
+    FILTER_LABELS[key] = label
+end
+
 local BUTTON_GAP = 5
-local DIALOG_WIDTH = 210
+local FILTER_COLUMNS = 2
+local FILTER_ROWS = math.ceil(#FILTER_ORDER / FILTER_COLUMNS)
+local COLUMN_WIDTH = 150
+local DIALOG_WIDTH = 40 + FILTER_COLUMNS * COLUMN_WIDTH
 -- 86 ButtonFrameTemplate inset chrome + 42 dropdown row + 26 per stat row + 38 apply row keeps every control inside the inset.
-local DIALOG_HEIGHT = 86 + 42 + #STAT_ORDER * 26 + 38
+local DIALOG_HEIGHT = 86 + 42 + FILTER_ROWS * 26 + 38
 
 local filterButton, resetButton, dialog
 local provider, originalAppend
@@ -37,28 +61,29 @@ local function activeFilter()
     return filter
 end
 
--- Match by plain substring so suffix gear and equip-effect stats count; structured stat parsing silently dropped those.
+-- Match on the parsed stat presence set, so ranged attack power never counts as attack power and spell crit stays apart from melee crit.
 local function statsMatch(itemText, filter)
+    local present = AP.StatScan.FullStatSet(itemText)
     if filter.logic == "OR" then
         for key in pairs(filter.stats) do
-            if itemText:find(STAT_TOKENS[key], 1, true) then return true end
+            if present[key] then return true end
         end
         return false
     end
 
     for key in pairs(filter.stats) do
-        if not itemText:find(STAT_TOKENS[key], 1, true) then return false end
+        if not present[key] then return false end
     end
     return true
 end
 
--- Whether a result row survives the filter: armor-class items with the chosen stats; rows without an item link (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills.
+-- Whether a result row survives the filter: equipment must carry the chosen stats, while consumables, trade goods and rows without an item link (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills.
 local function entryMatches(entry, filter)
     local link = entry.entries and entry.entries[1] and entry.entries[1].itemLink
     if not link then return true, false end
 
     local classID = select(6, C_Item.GetItemInfoInstant(link))
-    if classID ~= ARMOR_CLASS then return false, false end
+    if not Auctionator.Utilities.IsEquipment(classID) then return true, false end
 
     local itemText = AP.StatScan.ReadItemText(link)
     if not itemText then return false, true end
@@ -125,7 +150,7 @@ end
 
 local function readControls()
     local stats = {}
-    for _, key in ipairs(STAT_ORDER) do
+    for _, key in ipairs(FILTER_ORDER) do
         if dialog.statChecks[key]:GetChecked() then
             stats[key] = true
         end
@@ -136,7 +161,7 @@ local function readControls()
 end
 
 local function applyToControls(filter)
-    for _, key in ipairs(STAT_ORDER) do
+    for _, key in ipairs(FILTER_ORDER) do
         dialog.statChecks[key]:SetChecked(filter and filter.stats[key])
     end
     dialog.statLogic = filter and filter.logic or "AND"
@@ -166,22 +191,19 @@ local function buildDialog()
     dialog.logicDropdown = logicDropdown
 
     dialog.statChecks = {}
-    local previous = logicDropdown
-    for index, key in ipairs(STAT_ORDER) do
+    for index, key in ipairs(FILTER_ORDER) do
         local check = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
         check:SetSize(24, 24)
-        if index == 1 then
-            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", -2, -6)
-        else
-            check:SetPoint("TOPLEFT", previous, "BOTTOMLEFT", 0, -2)
-        end
+        local column = math.floor((index - 1) / FILTER_ROWS)
+        local row = (index - 1) % FILTER_ROWS
+        check:SetPoint("TOPLEFT", logicDropdown, "BOTTOMLEFT",
+            -2 + column * COLUMN_WIDTH, -6 - row * 26)
 
         local label = check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         label:SetPoint("LEFT", check, "RIGHT", 2, 0)
-        label:SetText(STAT_LABELS[key])
+        label:SetText(FILTER_LABELS[key])
 
         dialog.statChecks[key] = check
-        previous = check
     end
 
     local applyButton = CreateFrame("Button", nil, dialog, "UIPanelDynamicResizeButtonTemplate")

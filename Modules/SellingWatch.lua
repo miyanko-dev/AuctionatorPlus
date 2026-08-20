@@ -12,9 +12,15 @@ local NON_GEAR_SLOTS = {
     INVTYPE_NON_EQUIP_IGNORE = true,
 }
 
--- Robes and chest pieces share the chest slot; treat them as one for slot comparison.
+local LEVEL_TOLERANCE = 2  -- required level may differ by this much in either direction
+local DPS_TOLERANCE = 0.2  -- weapons match within this fraction of the sale item's DPS
+
+-- Robes share the chest slot and main- or off-hand-only weapons the generic one-hand slot; treat each group as one for slot comparison.
 local function normalizeSlot(equipLoc)
     if equipLoc == "INVTYPE_ROBE" then return "INVTYPE_CHEST" end
+    if equipLoc == "INVTYPE_WEAPONMAINHAND" or equipLoc == "INVTYPE_WEAPONOFFHAND" then
+        return "INVTYPE_WEAPON"
+    end
     return equipLoc
 end
 
@@ -37,7 +43,7 @@ local scanListener
 local CHECKBOX_TEXT = {
     gear = {
         label = "Show Similar Items",
-        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor or weapon type with the same required level that carry the same stats as the item being sold. Stat values are ignored. Click a similar auction to take its unit price for your listing.",
+        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor or weapon type within 2 levels of its required level. Matches must carry the same stats as the item being sold, attack power, spell damage, crit and other effects included, with values ignored. Weapons must additionally deal within 20% of its damage per second. Click a similar auction to take its unit price for your listing.",
     },
     bag = {
         label = "Show Similar Bags",
@@ -100,7 +106,7 @@ local function trackSaleItem(itemLink)
     end)
 end
 
--- Same slot, same armor or weapon type and the exact same required level; the stat set compares against the tooltip later.
+-- Same slot, same armor or weapon type and a required level within the tolerance; stats and DPS compare against the tooltip later.
 local function buildFilter(itemLink, equipLoc, itemSubType)
     return {
         equipLoc = normalizeSlot(equipLoc),
@@ -109,26 +115,40 @@ local function buildFilter(itemLink, equipLoc, itemSubType)
     }
 end
 
--- Auctionator categoryKey, slot-scoped where the category tree has the slot ("Armor/Mail/Hands"), otherwise class/subclass ("Weapon/Daggers").
-local function categoryForItem(itemLink, equipLoc)
+-- Auction browse inventory types per equip location, matching the Blizzard auction category data; slots absent here filter by subclass alone.
+local SLOT_INVENTORY_TYPES = {
+    INVTYPE_HEAD = Enum.InventoryType.IndexHeadType,
+    INVTYPE_NECK = Enum.InventoryType.IndexNeckType,
+    INVTYPE_SHOULDER = Enum.InventoryType.IndexShoulderType,
+    INVTYPE_BODY = Enum.InventoryType.IndexBodyType,
+    INVTYPE_WAIST = Enum.InventoryType.IndexWaistType,
+    INVTYPE_LEGS = Enum.InventoryType.IndexLegsType,
+    INVTYPE_FEET = Enum.InventoryType.IndexFeetType,
+    INVTYPE_WRIST = Enum.InventoryType.IndexWristType,
+    INVTYPE_HAND = Enum.InventoryType.IndexHandType,
+    INVTYPE_FINGER = Enum.InventoryType.IndexFingerType,
+    INVTYPE_TRINKET = Enum.InventoryType.IndexTrinketType,
+    INVTYPE_CLOAK = Enum.InventoryType.IndexCloakType,
+    INVTYPE_HOLDABLE = Enum.InventoryType.IndexHoldableType,
+}
+
+-- Server browse filters built from class, subclass and slot ids; category-name lookups missed renamed keys and fell back to scanning the whole auction house.
+local function buildCategoryFilters(itemLink, equipLoc)
     local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemLink)
     if not classID then return nil end
-    local className = C_Item.GetItemClassInfo(classID)
-    if not className then return nil end
 
-    local subName = subClassID and C_Item.GetItemSubClassInfo(classID, subClassID)
-    local categoryKey = className
-    if subName and subName ~= "" then
-        categoryKey = categoryKey .. "/" .. subName
+    -- Weapon subclasses span main-, off- and one-hand forms, so no inventory type narrows them.
+    if classID ~= Enum.ItemClass.Armor then
+        return { { classID = classID, subClassID = subClassID } }
     end
-    local slotName = equipLoc and _G[equipLoc]
-    if slotName and slotName ~= "" then
-        local withSlot = categoryKey .. "/" .. slotName
-        if Auctionator.Search.GetItemClassCategories(withSlot) then
-            categoryKey = withSlot
-        end
+    -- Chest and robe listings form one browse pool, mirroring the normalized client slot.
+    if equipLoc == "INVTYPE_CHEST" or equipLoc == "INVTYPE_ROBE" then
+        return {
+            { classID = classID, subClassID = subClassID, inventoryType = Enum.InventoryType.IndexChestType },
+            { classID = classID, subClassID = subClassID, inventoryType = Enum.InventoryType.IndexRobeType },
+        }
     end
-    return categoryKey
+    return { { classID = classID, subClassID = subClassID, inventoryType = SLOT_INVENTORY_TYPES[equipLoc] } }
 end
 
 -- Build the comparison profile for the dropped sale item, synchronous since the slotted item is cached; nil for unsupported items.
@@ -139,13 +159,12 @@ local function profileForItem(itemLink)
         local slotCount = AP.StatScan.ParseSlotCount(AP.StatScan.ReadItemText(itemLink))
         if not slotCount then return nil end
         local classID = select(6, C_Item.GetItemInfoInstant(itemLink))
-        local className = classID and C_Item.GetItemClassInfo(classID)
-        if not className then return nil end
-        -- The bare class key ("Container") spans every bag subtype, so soul and profession bags compare too.
+        if not classID then return nil end
+        -- The bare class filter ("Container") spans every bag subtype, so soul and profession bags compare too.
         return {
             kind = kind,
             itemLink = itemLink,
-            categoryKey = className,
+            categoryFilters = { { classID = classID } },
             slotCount = slotCount,
         }
     end
@@ -153,21 +172,27 @@ local function profileForItem(itemLink)
     if kind ~= "gear" then return nil end
     local equipLoc, _, itemSubType = AP.StatScan.GetEquipInfo(itemLink)
     if not equipLoc then return nil end
-    local categoryKey = categoryForItem(itemLink, equipLoc)
-    if not categoryKey then return nil end
+    local categoryFilters = buildCategoryFilters(itemLink, equipLoc)
+    if not categoryFilters then return nil end
 
+    local itemText = AP.StatScan.ReadItemText(itemLink)
+    local classID = select(6, C_Item.GetItemInfoInstant(itemLink))
     return {
         kind = kind,
         itemLink = itemLink,
-        categoryKey = categoryKey,
+        categoryFilters = categoryFilters,
         filter = buildFilter(itemLink, equipLoc, itemSubType),
-        statSet = AP.StatScan.PrimaryStatSet(AP.StatScan.ReadItemText(itemLink)),
+        -- Weapons gate on the DPS band before the stat set every profile checks; a weapon with no parseable DPS line skips the gate.
+        dps = classID == Enum.ItemClass.Weapon
+            and AP.StatScan.ParseDPS(itemText) or nil,
+        statSet = AP.StatScan.FullStatSet(itemText),
     }
 end
 
--- Gear must sit in the same slot with the same armor or weapon type, require the exact same level and carry the same primary-stat set; bags must hold the same number of slots.
+-- Checks in priority order: same slot and armor or weapon type, required level within the tolerance, for weapons DPS within the band, and last the full stat presence set. Bags must hold the same number of slots.
 local function matchesProfile(pending, itemLink)
     local itemText = AP.StatScan.ReadItemText(itemLink)
+    if not itemText then return false end
 
     if pending.kind == "bag" then
         return AP.StatScan.ParseSlotCount(itemText) == pending.slotCount
@@ -177,8 +202,18 @@ local function matchesProfile(pending, itemLink)
     local equipLoc, _, subType = AP.StatScan.GetEquipInfo(itemLink)
     if normalizeSlot(equipLoc) ~= filter.equipLoc then return false end
     if subType ~= filter.subType then return false end
-    if (select(5, C_Item.GetItemInfo(itemLink)) or 0) ~= filter.requiredLevel then return false end
-    return AP.StatScan.SameStatSet(AP.StatScan.PrimaryStatSet(itemText), pending.statSet)
+    local level = select(5, C_Item.GetItemInfo(itemLink)) or 0
+    if math.abs(level - filter.requiredLevel) > LEVEL_TOLERANCE then return false end
+
+    if pending.dps then
+        local dps = AP.StatScan.ParseDPS(itemText)
+        if not dps
+            or dps < pending.dps * (1 - DPS_TOLERANCE)
+            or dps > pending.dps * (1 + DPS_TOLERANCE) then
+            return false
+        end
+    end
+    return AP.StatScan.SameStatSet(AP.StatScan.FullStatSet(itemText), pending.statSet)
 end
 
 -- The selling tab's live current-prices frame (name-based listing).
@@ -285,13 +320,18 @@ local function runComparableSearch(pending)
     watch.scanToken = pending.token
     Auctionator.EventBus:Register(scanListener, scanEvents())
 
-    -- The legacy query's level range filters by required level server-side; zero means "no requirement" and cannot be expressed there, so it stays a client-side check.
+    -- Filter by required level server-side only when the whole client range sits above zero, since a browse level range can drop "no level requirement" listings.
     local requiredLevel = pending.filter and pending.filter.requiredLevel or 0
+    local minLevel, maxLevel
+    if requiredLevel > LEVEL_TOLERANCE then
+        minLevel = requiredLevel - LEVEL_TOLERANCE
+        maxLevel = requiredLevel + LEVEL_TOLERANCE
+    end
     local ok = pcall(Auctionator.AH.QueryAuctionItems, {
         searchString = "",
-        minLevel = requiredLevel > 0 and requiredLevel or nil,
-        maxLevel = requiredLevel > 0 and requiredLevel or nil,
-        itemClassFilters = Auctionator.Search.GetItemClassCategories(pending.categoryKey) or {},
+        minLevel = minLevel,
+        maxLevel = maxLevel,
+        itemClassFilters = pending.categoryFilters,
         isExact = false,
     })
     -- A failed start means the scanner belongs to another component; clean up without aborting their scan.
@@ -538,3 +578,7 @@ function AP.SellingWatch.Ensure()
     local refreshOk = hookRefreshButton()
     return checkboxOk and refreshOk
 end
+
+-- Exposed for the offline test harness and in-game debugging.
+AP.SellingWatch.BuildProfile = profileForItem
+AP.SellingWatch.MatchesProfile = matchesProfile
