@@ -1,4 +1,4 @@
-## Interface: 11508
+## Interface: 11509
 ## Title: Auctionator Plus
 ## Category: Auctions
 ## Notes: Companion add-on for Auctionator. Adds price-history tooltips, trend columns, and similar-item selling comparisons to the Auction House.
