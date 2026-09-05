@@ -12,8 +12,9 @@ local NON_GEAR_SLOTS = {
     INVTYPE_NON_EQUIP_IGNORE = true,
 }
 
-local LEVEL_TOLERANCE = 2  -- required level may differ by this much in either direction
-local DPS_TOLERANCE = 0.2  -- weapons match within this fraction of the sale item's DPS
+-- Comparables must sit within these bands of the sale item; both come from the settings panel
+local function levelTolerance() return AP.DB().levelTolerance end
+local function dpsTolerance() return AP.DB().dpsTolerancePct / 100 end
 
 -- Robes share the chest slot and main- or off-hand-only weapons the generic one-hand slot; treat each group as one for slot comparison.
 local function normalizeSlot(equipLoc)
@@ -27,23 +28,24 @@ end
 -- Absorb the burst of StartFakeBuyLoading repeats one placement fires, but re-run on a genuine re-drop.
 local REDROP_DEBOUNCE = 1.0
 
+-- token bumps per placement and supersedes in-flight work; pending is the sale item's profile awaiting comparables; trackedLink and saleKind ("gear" | "bag" | nil) drive the checkbox
 local watch = {
-    token = 0,          -- bumped per placement; supersedes in-flight work
+    token = 0,
     lastLink = nil,
     lastProcessAt = nil,
-    pending = nil,      -- profile of the current sale item awaiting comparables
+    pending = nil,
     scanning = false,
     scanEntries = nil,
     scanToken = nil,
-    trackedLink = nil,  -- sale-slot item driving the checkbox state
-    saleKind = nil,     -- "gear" | "bag" | nil; drives checkbox visibility and label
+    trackedLink = nil,
+    saleKind = nil,
 }
 local scanListener
 
 local CHECKBOX_TEXT = {
     gear = {
         label = "Show Similar Items",
-        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor or weapon type within 2 levels of its required level. Matches must carry the same stats as the item being sold, attack power, spell damage, crit and other effects included, with values ignored. Weapons must additionally deal within 20% of its damage per second. Click a similar auction to take its unit price for your listing.",
+        tooltip = "When a piece of gear is placed for sale, also list auctions of the same slot and armor or weapon type within %d levels of its required level. Matches must carry every stat of the item being sold (attack power, spell damage, crit and other effects included), each within %d%% of its amount, with a stat count within %d of it. Weapons must additionally deal within %d%% of its damage per second. Click a similar auction to take its unit price for your listing.",
     },
     bag = {
         label = "Show Similar Bags",
@@ -67,9 +69,9 @@ local function saleKindFor(itemLink)
     return nil
 end
 
-local function checkboxSetting()
-    if watch.saleKind == "bag" then return AP.Settings.showSimilarBags end
-    return AP.Settings.showSimilarItems
+-- Gear and bags remember their own choice
+local function similarKey()
+    return watch.saleKind == "bag" and "showSimilarBags" or "showSimilarItems"
 end
 
 -- The checkbox only exists for gear and containers; label and persisted setting follow the sale item's kind.
@@ -83,7 +85,7 @@ local function updateCheckbox()
         return
     end
     check.apLabel:SetText(text.label)
-    check:SetChecked(checkboxSetting())
+    check:SetChecked(AP.DB()[similarKey()])
     check:Show()
 end
 
@@ -141,6 +143,7 @@ local function buildCategoryFilters(itemLink, equipLoc)
     if classID ~= Enum.ItemClass.Armor then
         return { { classID = classID, subClassID = subClassID } }
     end
+
     -- Chest and robe listings form one browse pool, mirroring the normalized client slot.
     if equipLoc == "INVTYPE_CHEST" or equipLoc == "INVTYPE_ROBE" then
         return {
@@ -160,6 +163,7 @@ local function profileForItem(itemLink)
         if not slotCount then return nil end
         local classID = select(6, C_Item.GetItemInfoInstant(itemLink))
         if not classID then return nil end
+
         -- The bare class filter ("Container") spans every bag subtype, so soul and profession bags compare too.
         return {
             kind = kind,
@@ -182,6 +186,7 @@ local function profileForItem(itemLink)
         itemLink = itemLink,
         categoryFilters = categoryFilters,
         filter = buildFilter(itemLink, equipLoc, itemSubType),
+
         -- Weapons gate on the DPS band before the stat set every profile checks; a weapon with no parseable DPS line skips the gate.
         dps = classID == Enum.ItemClass.Weapon
             and AP.StatScan.ParseDPS(itemText) or nil,
@@ -189,7 +194,7 @@ local function profileForItem(itemLink)
     }
 end
 
--- Checks in priority order: same slot and armor or weapon type, required level within the tolerance, for weapons DPS within the band, and last the full stat presence set. Bags must hold the same number of slots.
+-- Checks in priority order: same slot and armor or weapon type, required level within the tolerance, for weapons DPS within the band, and last every stat of the sale item within its value band, with a stat count within the tolerance. Bags must hold the same number of slots.
 local function matchesProfile(pending, itemLink)
     local itemText = AP.StatScan.ReadItemText(itemLink)
     if not itemText then return false end
@@ -203,17 +208,16 @@ local function matchesProfile(pending, itemLink)
     if normalizeSlot(equipLoc) ~= filter.equipLoc then return false end
     if subType ~= filter.subType then return false end
     local level = select(5, C_Item.GetItemInfo(itemLink)) or 0
-    if math.abs(level - filter.requiredLevel) > LEVEL_TOLERANCE then return false end
+    if math.abs(level - filter.requiredLevel) > levelTolerance() then return false end
 
     if pending.dps then
         local dps = AP.StatScan.ParseDPS(itemText)
-        if not dps
-            or dps < pending.dps * (1 - DPS_TOLERANCE)
-            or dps > pending.dps * (1 + DPS_TOLERANCE) then
-            return false
-        end
+        local band = pending.dps * dpsTolerance()
+        if not dps or math.abs(dps - pending.dps) > band then return false end
     end
-    return AP.StatScan.SameStatSet(AP.StatScan.FullStatSet(itemText), pending.statSet)
+    local stats = AP.StatScan.FullStatSet(itemText)
+    if not AP.StatScan.Covers(stats, pending.statSet, AP.DB().statValueTolerance) then return false end
+    return math.abs(AP.StatScan.Count(stats) - AP.StatScan.Count(pending.statSet)) <= AP.DB().statCountTolerance
 end
 
 -- The selling tab's live current-prices frame (name-based listing).
@@ -280,6 +284,7 @@ local function mergeIntoProvider(provider, entries)
     end
     if added == 0 then return end
     provider:PopulateAuctions()
+
     -- PopulateAuctions rebuilds every row notReady; ready them again so the merged listing stays hover- and clickable.
     for _, result in ipairs(provider.currentResults or {}) do
         result.notReady = false
@@ -290,6 +295,7 @@ end
 local function injectComparables(pending, entries)
     local provider = currentPricesProvider()
     if not provider or not provider.allAuctions then return end
+
     -- Never merge into a listing that meanwhile shows a different item.
     if Auctionator.Search.GetCleanItemLink(pending.itemLink) ~= provider.searchKey then return end
 
@@ -322,10 +328,11 @@ local function runComparableSearch(pending)
 
     -- Filter by required level server-side only when the whole client range sits above zero, since a browse level range can drop "no level requirement" listings.
     local requiredLevel = pending.filter and pending.filter.requiredLevel or 0
+    local tolerance = levelTolerance()
     local minLevel, maxLevel
-    if requiredLevel > LEVEL_TOLERANCE then
-        minLevel = requiredLevel - LEVEL_TOLERANCE
-        maxLevel = requiredLevel + LEVEL_TOLERANCE
+    if requiredLevel > tolerance then
+        minLevel = requiredLevel - tolerance
+        maxLevel = requiredLevel + tolerance
     end
     local ok = pcall(Auctionator.AH.QueryAuctionItems, {
         searchString = "",
@@ -334,6 +341,7 @@ local function runComparableSearch(pending)
         itemClassFilters = pending.categoryFilters,
         isExact = false,
     })
+
     -- A failed start means the scanner belongs to another component; clean up without aborting their scan.
     if not ok then
         watch.scanning = false
@@ -396,6 +404,7 @@ local function takeOverPrice(rowData)
     if not rowData or not rowData.unitPrice or not watch.trackedLink then return end
     local provider = currentPricesProvider()
     if not provider or not provider.currentResults or not provider.searchKey then return end
+
     -- Comparables exist only while a profile for the currently searched item is live; anything else is a stale row.
     if not watch.pending
         or Auctionator.Search.GetCleanItemLink(watch.pending.itemLink) ~= provider.searchKey then
@@ -421,7 +430,7 @@ local function takeOverPrice(rowData)
     end)
 end
 
-local function receiveEvent(_, eventName, eventData, arg3)
+local function receiveEvent(_, eventName, eventData, gotAllResults)
     local sellingEvents = Auctionator.Selling.Events
     local buyingEvents = Auctionator.Buying.Events
     local AH = Auctionator.AH.Events
@@ -429,10 +438,12 @@ local function receiveEvent(_, eventName, eventData, arg3)
     if eventName == sellingEvents.StartFakeBuyLoading then
         local link = eventData and eventData.itemLink
         if not link then return end
+
         -- A different item entered the sale slot; the old profile must never scan under the new listing.
         if link ~= watch.trackedLink then invalidatePending() end
         trackSaleItem(link)
-        if not watch.saleKind or not checkboxSetting() then return end
+        if not watch.saleKind or not AP.DB()[similarKey()] then return end
+
         -- Skip the rapid repeat fires for the item just handled; a later re-drop still re-runs.
         if link == watch.lastLink and watch.lastProcessAt
             and (GetTime() - watch.lastProcessAt) < REDROP_DEBOUNCE then
@@ -465,7 +476,7 @@ local function receiveEvent(_, eventName, eventData, arg3)
                 table.insert(watch.scanEntries, entry)
             end
         end
-        if arg3 then -- gotAllResults
+        if gotAllResults then
             local pending, collected, token = watch.pending, watch.scanEntries, watch.scanToken
             watch.scanning = false
             Auctionator.EventBus:Unregister(scanListener, scanEvents())
@@ -525,12 +536,7 @@ local function ensureCheckbox()
 
     check:SetScript("OnClick", function(self)
         local checked = self:GetChecked() and true or false
-        if watch.saleKind == "bag" then
-            AP.Settings.showSimilarBags = checked
-        else
-            AP.Settings.showSimilarItems = checked
-        end
-        AP.SaveSettings()
+        AP.DB()[similarKey()] = checked
 
         -- Apply the new state to the slotted item right away; the refresh rebuilds the listing with or without comparables.
         if checked and watch.trackedLink then
@@ -545,7 +551,7 @@ local function ensureCheckbox()
         if not text then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(text.label)
-        GameTooltip:AddLine(text.tooltip, 1, 1, 1, true)
+        GameTooltip:AddLine(text.tooltip:format(AP.DB().levelTolerance, AP.DB().statValueTolerance, AP.DB().statCountTolerance, AP.DB().dpsTolerancePct), 1, 1, 1, true)
         GameTooltip:Show()
     end)
     check:SetScript("OnLeave", GameTooltip_Hide)
@@ -579,6 +585,3 @@ function AP.SellingWatch.Ensure()
     return checkboxOk and refreshOk
 end
 
--- Exposed for the offline test harness and in-game debugging.
-AP.SellingWatch.BuildProfile = profileForItem
-AP.SellingWatch.MatchesProfile = matchesProfile

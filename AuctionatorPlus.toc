@@ -5,12 +5,12 @@
 ## Author: MIYANKO
 ## Version: 2.0.0
 ## Dependencies: Auctionator
-## SavedVariables: AuctionatorPlusAccountDB
-## SavedVariablesPerCharacter: AuctionatorPlusDB
+## SavedVariables: AuctionatorPlusDB
 ## IconTexture: 133784
 
 Modules\Init.lua
 Modules\Bridge.lua
+Modules\Panel.lua
 Modules\StatScan.lua
 Modules\PriceHistory.lua
 Modules\TrendColumn.lua
@@ -20,5 +20,6 @@ Modules\SellingWatch.lua
 Modules\ShoppingFilter.lua
 Modules\FullScanButton.lua
 Modules\TSMFeed.lua
-Modules\TSMTrend.lua
+Modules\Guide.lua
+Modules\Settings.lua
 Modules\Bootstrap.lua

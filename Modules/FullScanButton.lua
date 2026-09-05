@@ -17,69 +17,59 @@ local COLOR_RED = { 1, 0.2, 0.2 }
 local progressTooltip
 local hideTimer
 local scanActive = false
-local lastText, lastColor
-local tooltipShown = false
-local fadeDriver = CreateFrame("Frame")
 
-local function scanReady()
-    return Auctionator.State.FullScanFrameRef ~= nil
-end
+-- Last readout, kept while a scan runs or its verdict is held so a button re-shown mid-scan can repaint it
+local lastText, lastColor
 
 local function onClick()
-    if not scanReady() then return end
-    Auctionator.State.FullScanFrameRef:InitiateScan()
+    local scanFrame = Auctionator.State.FullScanFrameRef
+    if scanFrame then scanFrame:InitiateScan() end
 end
 
+-- The readout follows whichever Full Scan button is on screen
 local function activeButton()
-    local shop = AP.fullScanShoppingButton
-    local sell = AP.fullScanSellingButton
+    local shop, sell = AP.shoppingScanButton, AP.sellingScanButton
     if shop and shop:IsVisible() then return shop end
     if sell and sell:IsVisible() then return sell end
     return nil
 end
 
-local function ensureProgressTooltip()
-    if progressTooltip then return progressTooltip end
-    progressTooltip = CreateFrame(
-        "GameTooltip", "AuctionatorPlusScanProgressTooltip", UIParent, "GameTooltipTemplate")
+local function ensureTooltip()
+    if not progressTooltip then
+        progressTooltip = CreateFrame("GameTooltip", "AuctionatorPlusScanProgressTooltip", UIParent, "GameTooltipTemplate")
+    end
     return progressTooltip
 end
 
-local function stopFade()
-    fadeDriver:SetScript("OnUpdate", nil)
+local function hideTooltip()
+    local tt = progressTooltip
+    if not tt or not tt:IsShown() then return end
+    UIFrameFadeRemoveFrame(tt)
+    UIFrameFade(tt, {
+        mode = "OUT",
+        timeToFade = FADE_DURATION,
+        startAlpha = tt:GetAlpha(),
+        finishedFunc = function() tt:Hide() end,
+    })
 end
 
-local function startFade(tt, fromAlpha, toAlpha, onComplete)
-    stopFade()
-    tt:SetAlpha(fromAlpha)
-    tt:Show()
-    fadeDriver.tt = tt
-    fadeDriver.from = fromAlpha
-    fadeDriver.to = toAlpha
-    fadeDriver.elapsed = 0
-    fadeDriver.onComplete = onComplete
-    fadeDriver:SetScript("OnUpdate", function(self, dt)
-        self.elapsed = self.elapsed + dt
-        local progress = math.min(1, self.elapsed / FADE_DURATION)
-        self.tt:SetAlpha(self.from + (self.to - self.from) * progress)
-        if progress >= 1 then
-            self:SetScript("OnUpdate", nil)
-            local cb = self.onComplete
-            self.onComplete = nil
-            if cb then cb() end
-        end
-    end)
-end
-
-local function hideProgressTooltip()
-    if not progressTooltip or not tooltipShown then
-        if progressTooltip then progressTooltip:Hide() end
-        tooltipShown = false
+-- Paint text above a button; fade in when it appears, swap the text in place while it is already visible
+local function paintProgress(button, text, color)
+    if not button then return end
+    local tt = ensureTooltip()
+    if tt:GetOwner() ~= button then
+        tt:SetOwner(button, "ANCHOR_NONE")
+        tt:ClearAllPoints()
+        tt:SetPoint("BOTTOM", button, "TOP", 0, TOOLTIP_GAP)
+    end
+    tt:SetMinimumWidth(button:GetWidth())
+    tt:SetText(text, unpack(color))
+    if tt:IsShown() and not UIFrameIsFading(tt) then
+        tt:SetAlpha(1)
         return
     end
-    tooltipShown = false
-    local tt = progressTooltip
-    startFade(tt, tt:GetAlpha(), 0, function() tt:Hide() end)
+    UIFrameFadeRemoveFrame(tt)
+    UIFrameFadeIn(tt, FADE_DURATION, tt:IsShown() and tt:GetAlpha() or 0, 1)
 end
 
 local function cancelHideTimer()
@@ -89,51 +79,20 @@ local function cancelHideTimer()
     end
 end
 
-local function applyTooltipWidth(tt, button)
-    local width = button:GetWidth()
-    if width and width > 0 then
-        tt:SetMinimumWidth(width)
-    end
-end
-
-local function showProgressOnButton(button, text, color)
-    if not button then return end
-    local tt = ensureProgressTooltip()
-    if tt:GetOwner() ~= button then
-        tt:SetOwner(button, "ANCHOR_NONE")
-        tt:ClearAllPoints()
-        tt:SetPoint("BOTTOM", button, "TOP", 0, TOOLTIP_GAP)
-    end
-    applyTooltipWidth(tt, button)
-    tt:SetText(text, color[1], color[2], color[3])
-    if not tooltipShown then
-        tooltipShown = true
-        startFade(tt, 0, 1, nil)
-    else
-        stopFade()
-        tt:SetAlpha(1)
-        tt:Show()
-    end
-end
-
 local function showProgress(text, color)
     cancelHideTimer()
-    lastText = text
-    lastColor = color
-    showProgressOnButton(activeButton(), text, color)
+    lastText, lastColor = text, color
+    paintProgress(activeButton(), text, color)
 end
 
-local function showFinalThenHide(text, color)
-    cancelHideTimer()
+-- Hold the verdict briefly, then fade the readout away
+local function showFinal(text, color)
     scanActive = false
-    lastText = text
-    lastColor = color
-    showProgressOnButton(activeButton(), text, color)
+    showProgress(text, color)
     hideTimer = C_Timer.NewTimer(FINAL_HOLD_SECONDS, function()
         hideTimer = nil
-        lastText = nil
-        lastColor = nil
-        hideProgressTooltip()
+        lastText, lastColor = nil, nil
+        hideTooltip()
     end)
 end
 
@@ -152,32 +111,30 @@ AP.Bridge.Listen({
         if not scanActive then return end
         local pct = math.floor((eventData or 0) * 100)
         if pct >= 100 then
-            showFinalThenHide("Completed", COLOR_GREEN)
+            showFinal("Completed", COLOR_GREEN)
         else
             showProgress(pct .. "%", COLOR_WHITE)
         end
     elseif eventName == scanEvents.ScanComplete then
-        showFinalThenHide("Completed", COLOR_GREEN)
+        showFinal("Completed", COLOR_GREEN)
     elseif eventName == scanEvents.ScanFailed then
-        showFinalThenHide("Cancelled", COLOR_RED)
+        showFinal("Cancelled", COLOR_RED)
     end
 end)
 
-local function repositionSellingBottomRow(buyFrame)
-    if not buyFrame or buyFrame.auctionatorPlusBottomRowMoved then return end
+-- Pack History, Refresh, Buy and Cancel to the right so the Full Scan button fits at the row's left
+local function packBottomRow(buyFrame)
+    if buyFrame.apRowPacked then return end
     local history = buyFrame.HistoryButton
     local cp = buyFrame.CurrentPrices
-    local refresh = cp and cp.RefreshButton
-    local buy = cp and cp.BuyButton
-    local cancel = cp and cp.CancelButton
+    local refresh, buy, cancel = cp.RefreshButton, cp.BuyButton, cp.CancelButton
     if not history or not refresh or not buy or not cancel then return end
 
     buy:SetPoint("BOTTOMRIGHT", cancel, "BOTTOMLEFT", -BUTTON_GAP, 0)
     refresh:SetPoint("BOTTOMRIGHT", buy, "BOTTOMLEFT", -BUTTON_GAP, 0)
     history:ClearAllPoints()
     history:SetPoint("BOTTOMRIGHT", refresh, "BOTTOMLEFT", -BUTTON_GAP, 0)
-
-    buyFrame.auctionatorPlusBottomRowMoved = true
+    buyFrame.apRowPacked = true
 end
 
 local function createButton(name, parent, leftRegion, bottomRegion)
@@ -191,38 +148,33 @@ local function createButton(name, parent, leftRegion, bottomRegion)
     button:SetPoint("BOTTOM", bottomRegion, "BOTTOM", 0, 0)
     button:SetScript("OnClick", onClick)
     button:SetScript("OnEnter", function(self)
-        if scanActive or hideTimer then return end
+        if lastText then return end
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("Auctionator Full Scan")
-        GameTooltip:AddLine(
-            "Runs the Auctionator full auction-house scan. Available once every 15 minutes.",
-            1, 1, 1, true)
+        GameTooltip:AddLine("Runs the Auctionator full auction-house scan. Available once every 15 minutes.", 1, 1, 1, true)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", GameTooltip_Hide)
     button:SetScript("OnShow", function(self)
-        if (scanActive or hideTimer) and lastText and lastColor then
-            showProgressOnButton(self, lastText, lastColor)
-        end
+        if lastText then paintProgress(self, lastText, lastColor) end
     end)
-    button:SetScript("OnHide", hideProgressTooltip)
+    button:SetScript("OnHide", hideTooltip)
     return button
 end
 
 local function ensureShoppingButton()
-    if AP.fullScanShoppingButton then return true end
+    if AP.shoppingScanButton then return true end
     local shoppingFrame = _G.AuctionatorShoppingFrame
     local inset = shoppingFrame and shoppingFrame.ShoppingResultsInset
     local bg = inset and inset.Bg
     local exportButton = shoppingFrame and shoppingFrame.ExportCSV
-    if not shoppingFrame or not bg or not exportButton then return false end
-    AP.fullScanShoppingButton = createButton(
-        "AuctionatorPlusFullScanShoppingButton", shoppingFrame, bg, exportButton)
+    if not bg or not exportButton then return false end
+    AP.shoppingScanButton = createButton("AuctionatorPlusFullScanShoppingButton", shoppingFrame, bg, exportButton)
     return true
 end
 
 local function ensureSellingButton()
-    if AP.fullScanSellingButton then return true end
+    if AP.sellingScanButton then return true end
     local sellingFrame = _G.AuctionatorSellingFrame
     local buyFrame = sellingFrame and sellingFrame.BuyFrame
     local currentPrices = buyFrame and buyFrame.CurrentPrices
@@ -230,12 +182,11 @@ local function ensureSellingButton()
     local bg = inset and inset.Bg
     local refresh = currentPrices and currentPrices.RefreshButton
     local history = buyFrame and buyFrame.HistoryButton
-    if not buyFrame or not bg or not refresh or not history then return false end
-    repositionSellingBottomRow(buyFrame)
-    local btn = createButton(
-        "AuctionatorPlusFullScanSellingButton", buyFrame, bg, refresh)
-    btn:SetPoint("RIGHT", history, "LEFT", -BUTTON_GAP, 0)
-    AP.fullScanSellingButton = btn
+    if not bg or not refresh or not history then return false end
+    packBottomRow(buyFrame)
+    local button = createButton("AuctionatorPlusFullScanSellingButton", buyFrame, bg, refresh)
+    button:SetPoint("RIGHT", history, "LEFT", -BUTTON_GAP, 0)
+    AP.sellingScanButton = button
     return true
 end
 

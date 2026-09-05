@@ -6,7 +6,7 @@ AP.ShoppingFilter = {}
 local FILTER_ORDER = {
     "strength", "agility", "stamina", "intellect", "spirit",
     "attackpower", "rangedattackpower", "hit", "crit",
-    "spellhit", "spellcrit",
+    "spellhit", "spellcrit", "spellpower", "healing", "mp5", "defense",
     "arcanedamage", "firedamage", "frostdamage", "holydamage", "naturedamage", "shadowdamage",
 }
 
@@ -17,6 +17,10 @@ local FILTER_LABELS = {
     crit = "Crit Chance",
     spellhit = "Spell Hit Chance",
     spellcrit = "Spell Crit Chance",
+    spellpower = "Spell Power",
+    healing = "Healing",
+    mp5 = "Mana per 5 sec",
+    defense = "Defense",
     arcanedamage = "Arcane Spell Power",
     firedamage = "Fire Spell Power",
     frostdamage = "Frost Spell Power",
@@ -32,9 +36,9 @@ local BUTTON_GAP = 5
 local FILTER_COLUMNS = 2
 local FILTER_ROWS = math.ceil(#FILTER_ORDER / FILTER_COLUMNS)
 local COLUMN_WIDTH = 150
-local DIALOG_WIDTH = 40 + FILTER_COLUMNS * COLUMN_WIDTH
--- 86 ButtonFrameTemplate inset chrome + 42 dropdown row + 26 per stat row + 38 apply row keeps every control inside the inset.
-local DIALOG_HEIGHT = 86 + 42 + FILTER_ROWS * 26 + 38
+local STAT_ROW_HEIGHT = 26
+local CONTROL_HEIGHT = 22
+local DIALOG_WIDTH = 2 * AP.Panel.PAD + FILTER_COLUMNS * COLUMN_WIDTH
 
 local filterButton, resetButton, dialog
 local provider, originalAppend
@@ -45,20 +49,19 @@ local allEntries = {}
 -- Bumps on every search start and refilter; stale item-load callbacks compare against it and drop out.
 local generation = 0
 
-local function accountDB()
-    if type(AuctionatorPlusAccountDB) ~= "table" then
-        AuctionatorPlusAccountDB = {}
-    end
-    return AuctionatorPlusAccountDB
-end
-
 -- Account-wide filter: { stats = { strength = true, ... }, logic = "AND"|"OR" }; nil when unset.
 local function activeFilter()
-    local filter = accountDB().shoppingStatFilter
+    local filter = AP.DB().shoppingStatFilter
     if type(filter) ~= "table" or type(filter.stats) ~= "table" or not next(filter.stats) then
         return nil
     end
     return filter
+end
+
+-- A school filter is also met by generic spell power, which boosts every school
+local function hasStat(present, key)
+    if present[key] then return true end
+    return key:match("damage$") ~= nil and present.spellpower ~= nil
 end
 
 -- Match on the parsed stat presence set, so ranged attack power never counts as attack power and spell crit stays apart from melee crit.
@@ -66,13 +69,13 @@ local function statsMatch(itemText, filter)
     local present = AP.StatScan.FullStatSet(itemText)
     if filter.logic == "OR" then
         for key in pairs(filter.stats) do
-            if present[key] then return true end
+            if hasStat(present, key) then return true end
         end
         return false
     end
 
     for key in pairs(filter.stats) do
-        if not present[key] then return false end
+        if not hasStat(present, key) then return false end
     end
     return true
 end
@@ -165,24 +168,19 @@ local function applyToControls(filter)
         dialog.statChecks[key]:SetChecked(filter and filter.stats[key])
     end
     dialog.statLogic = filter and filter.logic or "AND"
+
     -- GenerateMenu re-runs the radio setup so the button text reflects the applied value.
     dialog.logicDropdown:GenerateMenu()
 end
 
+-- Parented to the shopping frame so it hides with the Auction House
 local function buildDialog()
-    dialog = CreateFrame("Frame", "AuctionatorPlusStatFilterDialog", _G.AuctionatorShoppingFrame, "ButtonFrameTemplate")
-    ButtonFrameTemplate_HidePortrait(dialog)
-    dialog:SetSize(DIALOG_WIDTH, DIALOG_HEIGHT)
-    dialog:SetPoint("CENTER")
-    dialog:SetFrameStrata("DIALOG")
-    dialog:SetTitle("Stat Filter")
-    dialog:EnableMouse(true)
-    tinsert(UISpecialFrames, dialog:GetName())
+    dialog = AP.Panel.Create("AuctionatorPlusStatFilterDialog", "Stat Filter", DIALOG_WIDTH, _G.AuctionatorShoppingFrame)
 
     dialog.statLogic = "AND"
     local logicDropdown = CreateFrame("DropdownButton", nil, dialog, "WowStyle1DropdownTemplate")
-    logicDropdown:SetPoint("TOPLEFT", dialog.Inset, "TOPLEFT", 12, -12)
-    logicDropdown:SetWidth(120)
+    logicDropdown:SetPoint("TOPLEFT", dialog, "TOPLEFT", AP.Panel.PAD, -AP.Panel.PAD_TOP)
+    logicDropdown:SetSize(120, CONTROL_HEIGHT)
     MenuUtil.CreateRadioMenu(logicDropdown,
         function(value) return dialog.statLogic == value end,
         function(value) dialog.statLogic = value end,
@@ -197,7 +195,7 @@ local function buildDialog()
         local column = math.floor((index - 1) / FILTER_ROWS)
         local row = (index - 1) % FILTER_ROWS
         check:SetPoint("TOPLEFT", logicDropdown, "BOTTOMLEFT",
-            -2 + column * COLUMN_WIDTH, -6 - row * 26)
+            -2 + column * COLUMN_WIDTH, -AP.Panel.TEXT_GAP - row * STAT_ROW_HEIGHT)
 
         local label = check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         label:SetPoint("LEFT", check, "RIGHT", 2, 0)
@@ -209,26 +207,27 @@ local function buildDialog()
     local applyButton = CreateFrame("Button", nil, dialog, "UIPanelDynamicResizeButtonTemplate")
     applyButton:SetText("Apply")
     DynamicResizeButton_Resize(applyButton)
-    applyButton:SetPoint("BOTTOMRIGHT", dialog.Inset, "BOTTOMRIGHT", -10, 10)
+    applyButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -AP.Panel.PAD, AP.Panel.PAD)
     applyButton:SetScript("OnClick", function()
-        accountDB().shoppingStatFilter = readControls()
+        AP.DB().shoppingStatFilter = readControls()
         dialog:Hide()
         reapplyFilter()
     end)
 
+    -- Dropdown row, stat grid, a section gap and the Apply row stack inside the padding
+    dialog:SetHeight(AP.Panel.PAD_TOP + CONTROL_HEIGHT + AP.Panel.TEXT_GAP + FILTER_ROWS * STAT_ROW_HEIGHT
+        + AP.Panel.SECTION_GAP + CONTROL_HEIGHT + AP.Panel.PAD)
+
     dialog:SetScript("OnShow", function()
         applyToControls(activeFilter())
     end)
-
-    -- Frames spawn visible; start hidden so the Filter button's first toggle shows the dialog.
-    dialog:Hide()
 end
 
 local function ensureButtons()
     if filterButton then return true end
 
     -- Parent to the full-scan button so both filter buttons follow its bottom-row spot and hide with it behind the buy screen.
-    local fullScan = AP.fullScanShoppingButton
+    local fullScan = AP.shoppingScanButton
     if not fullScan then return false end
 
     filterButton = CreateFrame("Button", nil, fullScan, "UIPanelDynamicResizeButtonTemplate")
@@ -243,7 +242,7 @@ local function ensureButtons()
     DynamicResizeButton_Resize(resetButton)
     resetButton:SetPoint("LEFT", filterButton, "RIGHT", BUTTON_GAP, 0)
     resetButton:SetScript("OnClick", function()
-        accountDB().shoppingStatFilter = nil
+        AP.DB().shoppingStatFilter = nil
         if dialog then dialog:Hide() end
         reapplyFilter()
     end)
@@ -276,9 +275,6 @@ AP.Bridge.Listen({ Auctionator.Shopping.Tab.Events.SearchStart }, function()
 end)
 
 function AP.ShoppingFilter.Ensure()
-    -- Legacy per-term store from the removed shopping-list integration.
-    accountDB().statFilters = nil
-
     local buttonsReady = ensureButtons()
     local providerReady = installProviderFilter()
     return buttonsReady and providerReady

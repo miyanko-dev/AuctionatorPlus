@@ -1,23 +1,27 @@
 local _, AP = ...
 
--- "Sale Scan": a button right of the AH money frame in the selling tab. One click runs a live exact-name search per distinct bag-listing item — the same sequential term scan a shopping list runs, first page only since only the lowest price matters — feeding Auctionator's price database so Rel. Value and the bag glow reflect current prices.
+-- "Sale Scan": a button right of the AH money frame in the selling tab. One click runs a live exact-name search per distinct bag-listing item — the same sequential term scan a shopping list runs, first page only since only the lowest price matters — feeding Auctionator's price database so the Relative Value and the bag glow reflect current prices.
 AP.SaleScan = {}
 
 local BUTTON_LABEL = "Sale Scan"
 local CANCEL_LABEL = "Cancel Scan"
 local BUTTON_WIDTH = 110
 local BUTTON_HEIGHT = 22
-local RETRY_SECONDS = 0.5  -- the bag view fills asynchronously after the tab opens
+
+-- The bag view fills asynchronously after the tab opens
+local RETRY_SECONDS = 0.5
 local MAX_RETRIES = 6
 
-local SCAN_LIST_NAME = "Bags"  -- shown as the list name in the shared search-progress locale string
+-- Shown as the list name in the shared search-progress locale string
+local SCAN_LIST_NAME = "Bags"
 
+-- queue holds the item names still to scan (nil while idle) and entries the in-flight query's results; aborting marks a ScanAborted we caused ourselves
 local state = {
-    queue = nil,      -- item names still to scan; nil while idle
+    queue = nil,
     total = 0,
-    entries = nil,    -- results collected for the in-flight query
+    entries = nil,
     scanning = false,
-    aborting = false, -- we cut the query short ourselves; expect ScanAborted
+    aborting = false,
 }
 local listener
 
@@ -205,7 +209,7 @@ function AP.SaleScan.Ensure()
     if AP.saleScanButton then return true end
     local sellingFrame = _G.AuctionatorSellingFrame
     local moneyFrame = _G.AuctionFrameMoneyFrame
-    local fullScanButton = AP.fullScanSellingButton
+    local fullScanButton = AP.sellingScanButton
     if not sellingFrame or not moneyFrame or not fullScanButton then return false end
 
     local button = CreateFrame(
@@ -224,7 +228,7 @@ function AP.SaleScan.Ensure()
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText(BUTTON_LABEL)
         GameTooltip:AddLine(
-            "Runs one live price search for every item in the bag list, like scanning a shopping list, so Rel. Value and the item glows use current auction prices. Steps aside for your own searches.",
+            "Runs one live price search for every item in the bag list, like scanning a shopping list, so the Relative Value and the item glows use current auction prices. Steps aside for your own searches.",
             1, 1, 1, true)
         GameTooltip:Show()
     end)
