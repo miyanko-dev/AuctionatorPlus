@@ -2,7 +2,7 @@
 ## Title: Auctionator Plus
 ## Category: Auctions
 ## Notes: Companion add-on for Auctionator. Adds price-history tooltips, trend columns, and similar-item selling comparisons to the Auction House.
-## Author: MIYANKO
+## Author: miyanko
 ## Version: 2.0.0
 ## Dependencies: Auctionator
 ## SavedVariables: AuctionatorPlusDB
