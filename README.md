@@ -1,32 +1,44 @@
-# Auctionator Plus
+# AuctionatorPlus
 
-A companion add-on for [Auctionator](https://www.curseforge.com/wow/addons/auctionator) that adds price-history and gear-pricing tools to the Auction House.
+A companion for [Auctionator](https://www.curseforge.com/wow/addons/auctionator) that adds price history, gear comparison and stat filtering to the Auction House.
 
 ## Features
 
-- **Price-history tooltips** — item tooltips list the **Average Price** from Auctionator (14 days of minimum buyouts from your scans) and from TSM, each tagged with its data age, then the **Relative Value** of the last known price against each, coloured for the active view at the Auction House, and the **TSM Sale Rate**. Stays out of the way inside the buy detail and sell-item views.
-- **Show Similar Items** — a checkbox in the Selling tab, visible only while a piece of equipment sits in the sale slot. When you place gear to sell, a background Auction House search runs (no tab switching) for the same **slot + armor or weapon type** with a **required level within the level range** (default 2 levels). Results are narrowed to items carrying **every stat** of the item being sold, each **within the stat value range** (default ±30% of the amount), with a **stat count within the set range** (default: the same count) — primary stats plus attack power, ranged attack power, spell power and spell damage by school, healing, crit, hit, defense, dodge, parry, block and block value, resistances, bonus armor, weapon damage, weapon and profession skills and mana or health per 5 sec, with creature-specific and form-only bonuses kept apart from their plain counterparts. Both the Equip wording and the random-suffix green lines ("+7 Fire Spell Damage") are recognised. Weapons must additionally land within the **DPS range** (default 20%) before their stats compare. Example: a level-9 one-handed sword with 10 DPS matches level 7 to 11 one-handed swords with 8 to 12 DPS and the same stats, and level-50 leather boots with attack power match leather boots with attack power requiring level 48 to 52. Matches are listed in the Selling tab's current-prices panel alongside Auctionator's usual name-based results.
-- **Show Similar Bags** — the same checkbox relabelled while a bag or other container sits in the sale slot. Lists every container with the **same number of slots**, regardless of bag type (regular, soul, profession bags). For items that are neither equipment nor containers the checkbox stays hidden.
-- **Price from comparables** — hover any listed result to preview the item (bags and containers included), and click a similar item's row to take over its exact unit price as the price for the item you are listing. Clicking a row of the item itself keeps Auctionator's usual undercut behaviour.
-- **Relative Value columns** — the shopping results and current-prices listings gain a *Relative* column showing each item's price against the Auctionator 14-day average, or the mean of the Auctionator and TSM values when both exist (green when favourable for the view), so underpriced deals stand out at a glance.
-- **Filter by Stat** — a *Filter* button in the shopping tab opens a stat dialog: checkboxes for the five primary stats plus attack power, ranged attack power, hit, crit, spell hit, spell crit, spell power, healing, mana per 5 sec, defense and the six spell power schools (generic spell power also satisfies a school), with a match-all or match-any condition. The filter persists account-wide and applies to every search until *Reset Filter*, but only constrains **equipment** — consumables, trade goods and other non-equipment results always pass through, so a consumable search never comes back empty because of a leftover gear filter.
-- **Green bag glow** — in the Selling tab's bag panel, items whose last known price beats their Auctionator and TSM Average Price by the sell threshold (default +15%; both values or either one, per the settings panel) get a green glow faded over their icon (the game's own `bags-glow-green`), so profitable sells stand out at a glance — including green-quality items, whose border is already green.
-- **Full Scan buttons** — a *Full Scan* button in both the shopping tab (next to *Export as CSV*) and the Selling tab's bottom row. One click starts Auctionator's full auction-house scan (available once every 15 minutes), with a progress readout fading in above the button: percentage while running, green *Completed* or red *Cancelled* at the end.
-- **Sale Scan** — a button right of the money display in the Selling tab, on the same line as the bottom-row buttons. One click runs a live exact-name price search for every distinct item in the bag panel, like scanning a shopping list (sequential, throttle-aware, first page only per item since results arrive cheapest-first and only the lowest price matters, with the current-prices panel showing the same loading spinner and "Search for item X/Y" progress line a list scan does, and the button flipping to *Cancel Scan* while it runs), feeding Auctionator's price database so the *Relative* and the green glow reflect current prices instead of your last scan. The scan steps aside as soon as you place an item for sale or run your own search.
-- **TSM data rows** — with the TSM desktop application running and the TradeSkillMaster_AppHelper addon present, Auctionator Plus captures the app's realm market data on login (TSM itself receives it unchanged) and fills the *TSM* rows of both tooltip sections. Without app data the rows stay hidden. Fresh app data is picked up on login or `/reload`.
-- **Sale Rate** — the TSM app's region-wide share of posted auctions that sell feeds a *Sale Rate* column in the shopping results, a *TSM Sale Rate* tooltip row, and an optional glow gate so slow sellers never glow.
-- **Settings panel** — an *Auctionator Plus Options* button on Auctionator's own tab, next to *Open Addon Options*, opens the addon's page under Options > AddOns: the bag-glow sell threshold, whether both Relative Values must reach it and the minimum sale rate, the level, weapon DPS, stat value and stat count ranges for similar items, and the guide-at-login toggle.
-- **Guide** — a short bullet list of what Auctionator Plus adds and how to enable the TSM features. It shows once per character at login (toggle in the settings), opens any time from the settings panel, and carries a button to the settings.
+- **Price-history tooltips** — item tooltips show the Auctionator 14-day average price and the TSM price, each tagged with its data age, plus the item's relative value against them and the TSM sale rate
+- **Relative Value column** — shopping results and current-prices listings gain a *Relative* column, green when the price is favourable, so underpriced deals stand out
+- **Show Similar Items** — drop a piece of gear in the sale slot and a background search finds auctions for the same slot and armor or weapon type, at a similar required level, carrying the same stats within a tolerance you set. Weapons must also land in a DPS range.
+- **Show Similar Bags** — the same checkbox for containers, listing every bag with the same slot count regardless of bag type
+- **Price from comparables** — hover a result to preview the item, click its row to take over its exact unit price for your own listing
+- **Filter by Stat** — a *Filter* button in the shopping tab gates results by primary stats, attack power, spell power by school, healing, hit, crit, defense and mana per 5 sec, with match-all or match-any. Only equipment is constrained, so consumable searches never come back empty.
+- **Green bag glow** — items in the Selling tab's bag panel whose last known price beats the averages by your threshold (default +15%) get a green glow over their icon
+- **Full Scan** — a button in both the shopping and Selling tabs starts Auctionator's full scan, with a live progress readout
+- **Sale Scan** — runs a live price search for every distinct item in your bag panel, so the Relative column and the glow reflect current prices instead of your last full scan
+- **Sale Rate** — the TSM region-wide share of auctions that actually sell, as a column, a tooltip row, and an optional gate so slow sellers never glow
+- **Guide** — a short list of what the addon adds, shown once per character at login
+
+## Installation
+
+1. Copy the `AuctionatorPlus/` folder into `World of Warcraft/_classic_era_/Interface/AddOns/`.
+2. Restart the game or `/reload`.
+3. Enable **Auctionator Plus** in the AddOns list.
 
 ## Usage
 
-1. In the Selling tab, drop a gear item or a bag and tick **Show Similar Items** / **Show Similar Bags** — comparable auctions appear in its current-prices list automatically.
-2. Hover an item to see its price history.
+1. In the Selling tab, drop a gear item or bag in the sale slot and tick **Show Similar Items** or **Show Similar Bags**. Comparable auctions appear in the current-prices list automatically, without switching tabs.
+2. Hover any item to see its price history.
 3. Sort shopping results by the **Relative** column to surface underpriced items.
+4. Click a comparable's row to adopt its unit price.
 
-The tooltip block and trend columns share the data Auctionator already collected. The similar-items search runs in the background on the Selling tab (no tab switching) and merges into the current-prices listing.
+## Settings
+
+The **Auctionator Plus Options** button on Auctionator's own tab opens the panel: bag-glow sell threshold, whether both relative values must reach it, minimum sale rate, and the level, weapon DPS, stat value and stat count ranges used for similar items.
 
 ## Requirements
 
 - WoW Classic Era / Anniversary 1.15.x
-- [Auctionator](https://www.curseforge.com/wow/addons/auctionator)
+- [Auctionator](https://www.curseforge.com/wow/addons/auctionator) — a hard dependency
+- TSM rows are optional: they need the TradeSkillMaster_AppHelper addon and the TSM desktop application running. Without app data those rows stay hidden.
+
+## Restrictions
+
+Price history comes from the data Auctionator already collected, so run a **Full Scan** or a **Sale Scan** before trusting the Relative column. Fresh TSM app data is picked up on login or `/reload`.
