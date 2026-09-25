@@ -2,60 +2,86 @@ local _, AP = ...
 
 AP.ShoppingFilter = {}
 
--- Filterable stats in dialog order, physical column first; every key matches AP.StatScan.FullStatSet.
-local FILTER_ORDER = {
+-- Filterable stats in dialog order, physical column first; every key matches AP.ItemStats.FullStatSet
+local STAT_ORDER = {
     "strength", "agility", "stamina", "intellect", "spirit",
-    "attackpower", "rangedattackpower", "hit", "crit",
-    "spellhit", "spellcrit", "spellpower", "healing", "mp5", "defense",
+    "attackpower", "rangedattackpower", "hit", "crit", "haste", "expertise", "armorpenetration", "defense",
+    "spellpower", "healing", "spellhit", "spellcrit", "spellpenetration", "mp5",
     "arcanedamage", "firedamage", "frostdamage", "holydamage", "naturedamage", "shadowdamage",
 }
 
+-- Stats only gear with combat ratings carries in a parseable form; both clients define their strings, so the client's half decides through AP.ItemStats.RATED_GEAR
+local RATED_STATS = { haste = true, expertise = true, armorpenetration = true, spellpenetration = true }
+
+-- Labels are the client's own stat names, so they match the item tooltips in every locale
 local FILTER_LABELS = {
-    attackpower = "Attack Power",
-    rangedattackpower = "Ranged Attack Power",
-    hit = "Hit Chance",
-    crit = "Crit Chance",
-    spellhit = "Spell Hit Chance",
-    spellcrit = "Spell Crit Chance",
-    spellpower = "Spell Power",
-    healing = "Healing",
-    mp5 = "Mana per 5 sec",
-    defense = "Defense",
-    arcanedamage = "Arcane Spell Power",
-    firedamage = "Fire Spell Power",
-    frostdamage = "Frost Spell Power",
-    holydamage = "Holy Spell Power",
-    naturedamage = "Nature Spell Power",
-    shadowdamage = "Shadow Spell Power",
+    attackpower = ITEM_MOD_ATTACK_POWER_SHORT,
+    rangedattackpower = ITEM_MOD_RANGED_ATTACK_POWER_SHORT,
+    hit = ITEM_MOD_HIT_RATING_SHORT,
+    crit = ITEM_MOD_CRIT_RATING_SHORT,
+    haste = ITEM_MOD_HASTE_RATING_SHORT,
+    expertise = ITEM_MOD_EXPERTISE_RATING_SHORT,
+    armorpenetration = ITEM_MOD_ARMOR_PENETRATION_RATING_SHORT,
+    defense = ITEM_MOD_DEFENSE_SKILL_RATING_SHORT,
+    spellpower = ITEM_MOD_SPELL_POWER_SHORT,
+    healing = ITEM_MOD_SPELL_HEALING_DONE_SHORT,
+    spellhit = ITEM_MOD_HIT_SPELL_RATING_SHORT,
+    spellcrit = ITEM_MOD_CRIT_SPELL_RATING_SHORT,
+    spellpenetration = ITEM_MOD_SPELL_PENETRATION_SHORT,
+    mp5 = ITEM_MOD_MANA_REGENERATION_SHORT,
+    arcanedamage = ITEM_MOD_ARCANE_DAMAGE_DONE_SHORT,
+    firedamage = ITEM_MOD_FIRE_DAMAGE_DONE_SHORT,
+    frostdamage = ITEM_MOD_FROST_DAMAGE_DONE_SHORT,
+    holydamage = ITEM_MOD_HOLY_DAMAGE_DONE_SHORT,
+    naturedamage = ITEM_MOD_NATURE_DAMAGE_DONE_SHORT,
+    shadowdamage = ITEM_MOD_SHADOW_DAMAGE_DONE_SHORT,
 }
-for key, label in pairs(AP.StatScan.STAT_LABELS) do
+for key, label in pairs(AP.ItemStats.STAT_LABELS) do
     FILTER_LABELS[key] = label
+end
+
+-- The stats this client offers, in dialog order, and the same set for lookups
+local FILTER_ORDER, OFFERED = {}, {}
+for _, key in ipairs(STAT_ORDER) do
+    if FILTER_LABELS[key] and (AP.ItemStats.RATED_GEAR or not RATED_STATS[key]) then
+        FILTER_ORDER[#FILTER_ORDER + 1] = key
+        OFFERED[key] = true
+    end
 end
 
 local BUTTON_GAP = 5
 local FILTER_COLUMNS = 2
 local FILTER_ROWS = math.ceil(#FILTER_ORDER / FILTER_COLUMNS)
-local COLUMN_WIDTH = 150
-local STAT_ROW_HEIGHT = 26
-local CONTROL_HEIGHT = 22
-local DIALOG_WIDTH = 2 * AP.Panel.PAD + FILTER_COLUMNS * COLUMN_WIDTH
+local COLUMN_WIDTH = 208
+local DROPDOWN_WIDTH = 120
+local APPLY_WIDTH = 96
+local DIALOG_WIDTH = 2 * AP.Panel.INSET + FILTER_COLUMNS * COLUMN_WIDTH
 
 local filterButton, resetButton, dialog
 local provider, originalAppend
 
--- Every entry Auctionator appended for the current search, in arrival order, so a filter change rebuilds the visible rows without a new search.
+-- Every entry Auctionator appended for the current search, in arrival order, so a filter change rebuilds the visible rows without a new search
 local allEntries = {}
 
--- Bumps on every search start and refilter; stale item-load callbacks compare against it and drop out.
+-- Bumps on every search start and refilter; stale item-load callbacks compare against it and drop out
 local generation = 0
 
--- Account-wide filter: { stats = { strength = true, ... }, logic = "AND"|"OR" }; nil when unset.
+-- Offered stats of a saved filter; stats this client does not offer never constrain it
+local function offeredStats(stats)
+    local kept = {}
+    for key in pairs(stats) do
+        if OFFERED[key] then kept[key] = true end
+    end
+    return kept
+end
+
+-- Account-wide filter: { stats = { strength = true, ... }, logic = "AND"|"OR" }; nil when unset
 local function activeFilter()
     local filter = AP.DB().shoppingStatFilter
-    if type(filter) ~= "table" or type(filter.stats) ~= "table" or not next(filter.stats) then
-        return nil
-    end
-    return filter
+    if type(filter) ~= "table" or type(filter.stats) ~= "table" then return nil end
+    local stats = offeredStats(filter.stats)
+    if not next(stats) then return nil end
+    return { stats = stats, logic = filter.logic }
 end
 
 -- A school filter is also met by generic spell power, which boosts every school
@@ -64,9 +90,8 @@ local function hasStat(present, key)
     return key:match("damage$") ~= nil and present.spellpower ~= nil
 end
 
--- Match on the parsed stat presence set, so ranged attack power never counts as attack power and spell crit stays apart from melee crit.
 local function statsMatch(itemText, filter)
-    local present = AP.StatScan.FullStatSet(itemText)
+    local present = AP.ItemStats.FullStatSet(itemText)
     if filter.logic == "OR" then
         for key in pairs(filter.stats) do
             if hasStat(present, key) then return true end
@@ -80,15 +105,15 @@ local function statsMatch(itemText, filter)
     return true
 end
 
--- Whether a result row survives the filter: equipment must carry the chosen stats, while consumables, trade goods and rows without an item link (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills.
+-- Whether a result survives the filter: equipment must carry the chosen stats, while consumables, trade goods and rows without an item (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills
 local function entryMatches(entry, filter)
-    local link = entry.entries and entry.entries[1] and entry.entries[1].itemLink
-    if not link then return true, false end
+    local itemRef = AP.Bridge.ShoppingItemRef(entry)
+    if not itemRef then return true, false end
 
-    local classID = select(6, C_Item.GetItemInfoInstant(link))
-    if not Auctionator.Utilities.IsEquipment(classID) then return true, false end
+    local classID = select(6, AP.ItemStats.InstantInfo(itemRef))
+    if not AP.Bridge.IsEquipment(classID) then return true, false end
 
-    local itemText = AP.StatScan.ReadItemText(link)
+    local itemText = AP.ItemStats.Text(itemRef)
     if not itemText then return false, true end
 
     return statsMatch(itemText, filter), false
@@ -109,13 +134,13 @@ local function updateButtonState()
     resetButton:SetEnabled(filter ~= nil)
 end
 
--- Re-append an uncached entry once its item data arrives, if it matches by then; the provider dedups by item key, so double appends are safe.
+-- Re-append an uncached entry once its item data arrives, if it matches by then; the provider dedups by item, so double appends are safe
 local function retryOnLoad(entry)
-    local entryItem = Item:CreateFromItemLink(entry.entries[1].itemLink)
-    if entryItem:IsItemEmpty() then return end
+    local itemID = AP.ItemStats.InstantInfo(AP.Bridge.ShoppingItemRef(entry))
+    if not itemID then return end
 
     local startedGeneration = generation
-    entryItem:ContinueOnItemLoad(function()
+    Item:CreateFromItemID(itemID):ContinueOnItemLoad(function()
         if generation ~= startedGeneration then return end
 
         local filter = activeFilter()
@@ -132,7 +157,7 @@ local function filterEntries(entries)
     for _, entry in ipairs(entries) do
         local matched, needsLoad = entryMatches(entry, filter)
         if matched then
-            table.insert(kept, entry)
+            kept[#kept + 1] = entry
         elseif needsLoad then
             retryOnLoad(entry)
         end
@@ -140,7 +165,7 @@ local function filterEntries(entries)
     return kept
 end
 
--- Rebuild the visible rows from the recorded entries under the current filter; Auctionator's search stays untouched.
+-- Rebuild the visible rows from the recorded entries under the current filter; Auctionator's search stays untouched
 local function reapplyFilter()
     updateButtonState()
     if not originalAppend then return end
@@ -169,18 +194,19 @@ local function applyToControls(filter)
     end
     dialog.statLogic = filter and filter.logic or "AND"
 
-    -- GenerateMenu re-runs the radio setup so the button text reflects the applied value.
+    -- GenerateMenu re-runs the radio setup so the button text reflects the applied value
     dialog.logicDropdown:GenerateMenu()
 end
 
 -- Parented to the shopping frame so it hides with the Auction House
 local function buildDialog()
-    dialog = AP.Panel.Create("AuctionatorPlusStatFilterDialog", "Stat Filter", DIALOG_WIDTH, _G.AuctionatorShoppingFrame)
+    local panel = AP.Panel
+    dialog = panel.Create("AuctionatorPlusStatFilterDialog", "Stat Filter", DIALOG_WIDTH, AuctionatorShoppingFrame)
 
     dialog.statLogic = "AND"
     local logicDropdown = CreateFrame("DropdownButton", nil, dialog, "WowStyle1DropdownTemplate")
-    logicDropdown:SetPoint("TOPLEFT", dialog, "TOPLEFT", AP.Panel.PAD, -AP.Panel.PAD_TOP)
-    logicDropdown:SetSize(120, CONTROL_HEIGHT)
+    logicDropdown:SetPoint("TOPLEFT", dialog, "TOPLEFT", panel.INSET, -panel.PAD_TOP)
+    logicDropdown:SetSize(DROPDOWN_WIDTH, panel.ROW)
     MenuUtil.CreateRadioMenu(logicDropdown,
         function(value) return dialog.statLogic == value end,
         function(value) dialog.statLogic = value end,
@@ -191,42 +217,37 @@ local function buildDialog()
     dialog.statChecks = {}
     for index, key in ipairs(FILTER_ORDER) do
         local check = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
-        check:SetSize(24, 24)
+        check:SetSize(panel.ROW, panel.ROW)
         local column = math.floor((index - 1) / FILTER_ROWS)
         local row = (index - 1) % FILTER_ROWS
-        check:SetPoint("TOPLEFT", logicDropdown, "BOTTOMLEFT",
-            -2 + column * COLUMN_WIDTH, -AP.Panel.TEXT_GAP - row * STAT_ROW_HEIGHT)
-
-        local label = check:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        label:SetPoint("LEFT", check, "RIGHT", 2, 0)
-        label:SetText(FILTER_LABELS[key])
+        check:SetPoint("TOPLEFT", logicDropdown, "BOTTOMLEFT", column * COLUMN_WIDTH, -panel.GAP - row * panel.ROW)
+        check.Text:SetFontObject("GameFontHighlight")
+        check.Text:SetText(FILTER_LABELS[key])
 
         dialog.statChecks[key] = check
     end
 
-    local applyButton = CreateFrame("Button", nil, dialog, "UIPanelDynamicResizeButtonTemplate")
+    local applyButton = CreateFrame("Button", nil, dialog, "UIPanelButtonTemplate")
+    applyButton:SetSize(APPLY_WIDTH, panel.BUTTON_HEIGHT)
     applyButton:SetText("Apply")
-    DynamicResizeButton_Resize(applyButton)
-    applyButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -AP.Panel.PAD, AP.Panel.PAD)
+    applyButton:SetPoint("BOTTOMRIGHT", dialog, "BOTTOMRIGHT", -panel.INSET, panel.INSET)
     applyButton:SetScript("OnClick", function()
         AP.DB().shoppingStatFilter = readControls()
         dialog:Hide()
         reapplyFilter()
     end)
 
-    -- Dropdown row, stat grid, a section gap and the Apply row stack inside the padding
-    dialog:SetHeight(AP.Panel.PAD_TOP + CONTROL_HEIGHT + AP.Panel.TEXT_GAP + FILTER_ROWS * STAT_ROW_HEIGHT
-        + AP.Panel.SECTION_GAP + CONTROL_HEIGHT + AP.Panel.PAD)
+    -- Dropdown row, stat grid, a section gap and the Apply row stack between the header clearance and the bottom inset
+    dialog:SetHeight(panel.PAD_TOP + panel.ROW + panel.GAP + FILTER_ROWS * panel.ROW + panel.SECTION + panel.BUTTON_HEIGHT + panel.INSET)
 
     dialog:SetScript("OnShow", function()
         applyToControls(activeFilter())
     end)
 end
 
+-- Parented to the shopping full-scan button so both filter buttons follow its bottom-row spot and hide with it behind the buy screens
 local function ensureButtons()
     if filterButton then return true end
-
-    -- Parent to the full-scan button so both filter buttons follow its bottom-row spot and hide with it behind the buy screen.
     local fullScan = AP.shoppingScanButton
     if not fullScan then return false end
 
@@ -251,18 +272,17 @@ local function ensureButtons()
     return true
 end
 
--- Instance wrap, not a mixin hook: record the unfiltered entries and forward only survivors, leaving Auctionator's search pipeline untouched.
+-- Instance wrap, not a mixin hook: record the unfiltered entries and forward only survivors, leaving Auctionator's search pipeline untouched
 local function installProviderFilter()
     if originalAppend then return true end
 
-    local shoppingFrame = _G.AuctionatorShoppingFrame
-    provider = shoppingFrame and shoppingFrame.DataProvider
+    provider = AuctionatorShoppingFrame and AuctionatorShoppingFrame.DataProvider
     if not provider or type(provider.AppendEntries) ~= "function" then return false end
 
     originalAppend = provider.AppendEntries
     provider.AppendEntries = function(self, entries, isLastSet)
         for _, entry in ipairs(entries) do
-            table.insert(allEntries, entry)
+            allEntries[#allEntries + 1] = entry
         end
         return originalAppend(self, filterEntries(entries), isLastSet)
     end

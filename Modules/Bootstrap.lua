@@ -1,37 +1,15 @@
 local _, AP = ...
 
-local buyFrameHooked = false
-
--- The shopping full-scan button sits over the results inset the buy screen covers, so it hides while that screen shows
-local function syncScanButton()
-    local buyFrame = _G.AuctionatorBuyFrame
-    AP.shoppingScanButton:SetShown(not (buyFrame and buyFrame:IsShown()))
-end
-
-local function hookBuyFrame()
-    if buyFrameHooked then return true end
-    local buyFrame = _G.AuctionatorBuyFrame
-    if not AP.shoppingScanButton or not buyFrame then return false end
-
-    buyFrame:HookScript("OnShow", syncScanButton)
-    buyFrame:HookScript("OnHide", syncScanButton)
-    _G.AuctionatorShoppingFrame:HookScript("OnShow", syncScanButton)
-    syncScanButton()
-    buyFrameHooked = true
-    return true
-end
-
--- Each returns true once its UI piece exists; order matters where one button anchors to another
+-- Each returns true once its UI piece exists, the first three from the loaded client's half; order matters where one button anchors to another
 local ENSURES = {
     AP.FullScanButton.Ensure,
-    hookBuyFrame,
-    AP.SellingWatch.Ensure,
+    AP.SimilarItems.Ensure,
     AP.SaleScan.Ensure,
     AP.ShoppingFilter.Ensure,
     AP.SettingsPanel.EnsureButton,
 }
 
--- Retry until every piece is in place; Auctionator creates the host frames on or shortly after first AH open
+-- Retry until every piece is in place; Auctionator creates the host frames on or shortly after the first AH open
 local function ensureButtons(attempt)
     local ready = true
     for _, ensure in ipairs(ENSURES) do

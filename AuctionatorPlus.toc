@@ -1,25 +1,39 @@
-## Interface: 11509
+## Interface: 11509, 16001
 ## Title: Auctionator Plus
 ## Category: Auctions
-## Notes: Companion add-on for Auctionator. Adds price-history tooltips, trend columns, and similar-item selling comparisons to the Auction House.
+## Notes: Companion add-on for Auctionator. Adds price-history tooltips, relative value columns, stat filters and similar-item selling comparisons to the Auction House.
 ## Author: miyanko
-## Version: 2.0.0
+## Version: 3.0.0
 ## Dependencies: Auctionator
+## OptionalDeps: TradeSkillMaster
 ## SavedVariables: AuctionatorPlusDB
 ## IconTexture: 133784
 
 Modules\Init.lua
 Modules\Bridge.lua
-Modules\Panel.lua
-Modules\StatScan.lua
+Modules\Era\Bridge.lua [AllowLoadGameType vanilla]
+Modules\Forever\Bridge.lua [AllowLoadGameType mainline]
+Modules\ItemStats.lua
+Modules\Era\ItemStats.lua [AllowLoadGameType vanilla]
+Modules\Forever\ItemStats.lua [AllowLoadGameType mainline]
+Modules\TSM.lua
 Modules\PriceHistory.lua
+Modules\Era\PriceHistory.lua [AllowLoadGameType vanilla]
+Modules\Forever\PriceHistory.lua [AllowLoadGameType mainline]
 Modules\TrendColumn.lua
+Modules\Era\TrendColumn.lua [AllowLoadGameType vanilla]
+Modules\Forever\TrendColumn.lua [AllowLoadGameType mainline]
 Modules\BagGlow.lua
-Modules\SaleScan.lua
-Modules\SellingWatch.lua
+Modules\Panel.lua
+Modules\SimilarItems.lua
+Modules\Era\SimilarItems.lua [AllowLoadGameType vanilla]
+Modules\Forever\SimilarItems.lua [AllowLoadGameType mainline]
 Modules\ShoppingFilter.lua
 Modules\FullScanButton.lua
-Modules\TSMFeed.lua
+Modules\Era\FullScanButton.lua [AllowLoadGameType vanilla]
+Modules\Forever\FullScanButton.lua [AllowLoadGameType mainline]
+Modules\Era\SaleScan.lua [AllowLoadGameType vanilla]
+Modules\Forever\SaleScan.lua [AllowLoadGameType mainline]
 Modules\Guide.lua
 Modules\Settings.lua
 Modules\Bootstrap.lua

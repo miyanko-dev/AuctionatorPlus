@@ -25,7 +25,7 @@ local SECTIONS = {
     } },
 }
 
-local category
+local category, optionsButton
 
 local function addControl(db, def)
     local key, label, tooltip, minValue, maxValue, step, formatter = unpack(def)
@@ -46,7 +46,7 @@ end
 function AP.SettingsPanel.Register()
     local db = AP.DB()
 
-    -- The login toggle used to be the TSM hint; carry the saved choice over
+    -- The login toggle used to be the TSM hint; carry the saved choice over from older builds
     if db.tsmHint ~= nil then
         db.guideAtLogin, db.tsmHint = db.tsmHint, nil
     end
@@ -63,7 +63,7 @@ function AP.SettingsPanel.Register()
     layout:AddInitializer(CreateSettingsListSectionHeaderInitializer("General"))
     local guideAtLogin = Settings.RegisterAddOnSetting(category, "AUCTIONATORPLUS_GUIDEATLOGIN", "guideAtLogin", db, Settings.VarType.Boolean, "Guide at login", AP.Defaults.guideAtLogin)
     Settings.CreateCheckbox(category, guideAtLogin, "Show the Auctionator Plus guide once per character at login.")
-    layout:AddInitializer(CreateSettingsButtonInitializer("Guide", "Open", AP.Guide.Show, "What Auctionator Plus adds and how to enable the TSM features.", true))
+    layout:AddInitializer(CreateSettingsButtonInitializer("Guide", "Open", AP.Guide.Show, "What Auctionator Plus adds and how the TSM rows come alive.", true))
 
     Settings.RegisterAddOnCategory(category)
 end
@@ -74,8 +74,8 @@ end
 
 -- Sits left of Auctionator's own "Open Addon Options" button on its tab; that tab frame exists once the AH has opened
 function AP.SettingsPanel.EnsureButton()
-    if AP.optionsButton then return true end
-    local configTab = _G.AuctionatorConfigFrame
+    if optionsButton then return true end
+    local configTab = AuctionatorConfigFrame
     if not configTab or not configTab.OptionsButton then return false end
 
     local button = CreateFrame("Button", "AuctionatorPlusOptionsButton", configTab, "UIPanelDynamicResizeButtonTemplate")
@@ -83,6 +83,6 @@ function AP.SettingsPanel.EnsureButton()
     DynamicResizeButton_Resize(button)
     button:SetPoint("TOPRIGHT", configTab.OptionsButton, "TOPLEFT", -3, 0)
     button:SetScript("OnClick", AP.SettingsPanel.Open)
-    AP.optionsButton = button
+    optionsButton = button
     return true
 end

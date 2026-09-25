@@ -1,16 +1,13 @@
 local _, AP = ...
 
+-- Full Scan buttons on the shopping and selling tabs with a live progress label; each client's half places them in its own Auctionator layout as AP.shoppingScanButton and AP.sellingScanButton
 AP.FullScanButton = {}
 
 local BUTTON_LABEL = "Full Scan"
 local BUTTON_WIDTH = 110
 local BUTTON_HEIGHT = 22
-local BUTTON_GAP = 2
 local FINAL_HOLD_SECONDS = 2
 local FADE_DURATION = 0.3
-
-local COLOR_GREEN = "|cff19ff19"
-local COLOR_RED = "|cffff3333"
 
 local hideTimer
 local scanActive = false
@@ -18,11 +15,6 @@ local lastPct = 0
 
 -- Current label, nil while idle, so a button created mid-scan can paint itself
 local lastText
-
-local function onClick()
-    local scanFrame = Auctionator.State.FullScanFrameRef
-    if scanFrame then scanFrame:InitiateScan() end
-end
 
 local function eachButton(fn)
     if AP.shoppingScanButton then fn(AP.shoppingScanButton) end
@@ -62,8 +54,7 @@ end
 
 local function progressText(pct, color)
     local text = BUTTON_LABEL .. " " .. pct .. "%"
-    if color then return color .. text .. "|r" end
-    return text
+    return color and color:WrapTextInColorCode(text) or text
 end
 
 local function showProgress(pct)
@@ -87,6 +78,7 @@ local function showFinal(pct, color)
     end)
 end
 
+-- Both Auctionator builds fire the same four scan events, under different names
 local scanEvents = Auctionator.FullScan.Events
 
 AP.Bridge.Listen({
@@ -102,82 +94,29 @@ AP.Bridge.Listen({
         if not scanActive then return end
         local pct = math.floor((eventData or 0) * 100)
         if pct >= 100 then
-            showFinal(100, COLOR_GREEN)
+            showFinal(100, GREEN_FONT_COLOR)
         else
             showProgress(pct)
         end
     elseif eventName == scanEvents.ScanComplete then
-        showFinal(100, COLOR_GREEN)
+        showFinal(100, GREEN_FONT_COLOR)
     elseif eventName == scanEvents.ScanFailed then
-        showFinal(lastPct, COLOR_RED)
+        showFinal(lastPct, RED_FONT_COLOR)
     end
 end)
 
--- Pack History, Refresh, Buy and Cancel to the right so the Full Scan button fits at the row's left
-local function packBottomRow(buyFrame)
-    if buyFrame.apRowPacked then return end
-    local history = buyFrame.HistoryButton
-    local cp = buyFrame.CurrentPrices
-    local refresh, buy, cancel = cp.RefreshButton, cp.BuyButton, cp.CancelButton
-    if not history or not refresh or not buy or not cancel then return end
-
-    buy:SetPoint("BOTTOMRIGHT", cancel, "BOTTOMLEFT", -BUTTON_GAP, 0)
-    refresh:SetPoint("BOTTOMRIGHT", buy, "BOTTOMLEFT", -BUTTON_GAP, 0)
-    history:ClearAllPoints()
-    history:SetPoint("BOTTOMRIGHT", refresh, "BOTTOMLEFT", -BUTTON_GAP, 0)
-    buyFrame.apRowPacked = true
-end
-
-local function createButton(name, parent, leftRegion, bottomRegion)
+-- One Full Scan button in Auctionator's own button metrics; the caller anchors it
+function AP.FullScanButton.Create(name, parent)
     local button = CreateFrame("Button", name, parent, "UIPanelButtonTemplate")
     button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
-    button:SetFrameStrata(parent:GetFrameStrata())
-    button:SetFrameLevel(parent:GetFrameLevel() + 5)
-    button:ClearAllPoints()
-    button:SetPoint("LEFT", leftRegion, "LEFT", 0, 0)
-    button:SetPoint("BOTTOM", bottomRegion, "BOTTOM", 0, 0)
     paintButton(button, lastText)
-    button:SetScript("OnClick", onClick)
+    button:SetScript("OnClick", AP.Bridge.StartFullScan)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText("Auctionator Full Scan")
-        GameTooltip:AddLine("Runs the Auctionator full auction-house scan. Available once every 15 minutes.", 1, 1, 1, true)
+        GameTooltip_SetTitle(GameTooltip, "Auctionator Full Scan")
+        GameTooltip_AddHighlightLine(GameTooltip, "Runs the Auctionator full auction-house scan. Available once every 15 minutes.", true)
         GameTooltip:Show()
     end)
     button:SetScript("OnLeave", GameTooltip_Hide)
     return button
-end
-
-local function ensureShoppingButton()
-    if AP.shoppingScanButton then return true end
-    local shoppingFrame = _G.AuctionatorShoppingFrame
-    local inset = shoppingFrame and shoppingFrame.ShoppingResultsInset
-    local bg = inset and inset.Bg
-    local exportButton = shoppingFrame and shoppingFrame.ExportCSV
-    if not bg or not exportButton then return false end
-    AP.shoppingScanButton = createButton("AuctionatorPlusFullScanShoppingButton", shoppingFrame, bg, exportButton)
-    return true
-end
-
-local function ensureSellingButton()
-    if AP.sellingScanButton then return true end
-    local sellingFrame = _G.AuctionatorSellingFrame
-    local buyFrame = sellingFrame and sellingFrame.BuyFrame
-    local currentPrices = buyFrame and buyFrame.CurrentPrices
-    local inset = currentPrices and currentPrices.Inset
-    local bg = inset and inset.Bg
-    local refresh = currentPrices and currentPrices.RefreshButton
-    local history = buyFrame and buyFrame.HistoryButton
-    if not bg or not refresh or not history then return false end
-    packBottomRow(buyFrame)
-    local button = createButton("AuctionatorPlusFullScanSellingButton", buyFrame, bg, refresh)
-    button:SetPoint("RIGHT", history, "LEFT", -BUTTON_GAP, 0)
-    AP.sellingScanButton = button
-    return true
-end
-
-function AP.FullScanButton.Ensure()
-    local shoppingReady = ensureShoppingButton()
-    local sellingReady = ensureSellingButton()
-    return shoppingReady and sellingReady
 end

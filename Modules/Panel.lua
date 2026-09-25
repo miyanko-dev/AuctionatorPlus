@@ -1,111 +1,105 @@
-local _, AP = ...
+local _, ns = ...
 
--- Shared dialog look for every Auctionator Plus panel: AceGUI-style backdrop, header banner and corner close, the same design as the Target Finder panel
-AP.Panel = {}
+-- Shared dialog for this author's addons: each client's own dialog border, header banner and close button, with Blizzard font objects for all text
+local Panel = {}
+ns.Panel = Panel
 
-AP.Panel.PAD = 16
-AP.Panel.SECTION_GAP = 16
-AP.Panel.TEXT_GAP = 4
-AP.Panel.BUTTON_HEIGHT = 22
+-- Content insets; the first element clears the header banner, whose art ends about 28px below the top edge on both clients
+Panel.INSET = 24
+Panel.PAD_TOP = 40
+Panel.SECTION = 16
+Panel.GAP = 8
+Panel.ROW = 24
+Panel.BUTTON_HEIGHT = 22
 
--- Clears the header banner
-AP.Panel.PAD_TOP = 48
-
-local HEADER_TEXTURE = "Interface\\DialogFrame\\UI-DialogBox-Header"
-
--- Banner rebuilt from three texture pieces (left cap, repeating middle, right cap) with the texCoords AceGUI uses
-local function addTitleBanner(panel, text)
-    local mid = panel:CreateTexture(nil, "OVERLAY")
-    mid:SetTexture(HEADER_TEXTURE)
-    mid:SetTexCoord(0.31, 0.67, 0, 0.63)
-    mid:SetPoint("TOP", panel, "TOP", 0, 12)
-    mid:SetHeight(40)
-
-    local left = panel:CreateTexture(nil, "OVERLAY")
-    left:SetTexture(HEADER_TEXTURE)
-    left:SetTexCoord(0.21, 0.31, 0, 0.63)
-    left:SetPoint("RIGHT", mid, "LEFT")
-    left:SetSize(30, 40)
-
-    local right = panel:CreateTexture(nil, "OVERLAY")
-    right:SetTexture(HEADER_TEXTURE)
-    right:SetTexCoord(0.67, 0.77, 0, 0.63)
-    right:SetPoint("LEFT", mid, "RIGHT")
-    right:SetSize(30, 40)
-
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", mid, "TOP", 0, -14)
-    title:SetText(text)
-    mid:SetWidth((title:GetStringWidth() or 0) + 10)
+-- Era's dialogs carry the UI-DialogBox backdrop of its GameMenuFrame on the frame itself, as GuildInfoFrame does, so the frame's own text draws above it
+local function classicFrame(name, parent)
+    local panel = CreateFrame("Frame", name, parent, "BackdropTemplate")
+    panel:SetBackdrop(BACKDROP_DIALOG_32_32)
+    return panel
 end
 
+-- Forever's dialogs use the DiamondMetal border of its GameMenuFrame, which shares the frame's level so the frame's own text draws above its background
+local function modernFrame(name, parent)
+    local panel = CreateFrame("Frame", name, parent)
+    local border = CreateFrame("Frame", nil, panel, "DialogBorderTemplate")
+    border:SetAllPoints(panel)
+    return panel
+end
+
+-- ClassicDialogHeaderTemplate loads only for the classic family, so its presence picks Era's art; close offsets follow Blizzard's own dialogs on each client
+local SKIN = C_XMLUtil.GetTemplateInfo("ClassicDialogHeaderTemplate")
+    and { create = classicFrame, header = "ClassicDialogHeaderTemplate", closeX = -3, closeY = -3 }
+    or { create = modernFrame, header = "DialogHeaderTemplate", closeX = -2, closeY = -2 }
+
 -- Movable dialog on the DIALOG strata that closes on Escape; starts hidden
-function AP.Panel.Create(name, title, width, parent)
-    local panel = CreateFrame("Frame", name, parent or UIParent, "BackdropTemplate")
-    panel:SetSize(width, 1)
+function Panel.Create(name, title, width, parent)
+    local panel = SKIN.create(name, parent or UIParent)
+    panel:SetSize(width, Panel.PAD_TOP)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
+    panel:SetToplevel(true)
     panel:SetClampedToScreen(true)
     panel:SetMovable(true)
     panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:SetScript("OnDragStart", panel.StartMoving)
     panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
-    panel:SetBackdrop({
-        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
-        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
-        tile = true,
-        tileSize = 32,
-        edgeSize = 32,
-        insets = { left = 8, right = 8, top = 8, bottom = 8 },
-    })
     tinsert(UISpecialFrames, name)
-    addTitleBanner(panel, title)
+
+    -- Setup sizes the banner to the title in the header's default GameFontNormal
+    local header = CreateFrame("Frame", nil, panel, SKIN.header)
+    header:Setup(title)
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -4, -4)
+    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", SKIN.closeX, SKIN.closeY)
 
     panel.contentHeight = 0
     panel:Hide()
     return panel
 end
 
--- Gold heading with wrapped body text, stacked under the previous section; the content height feeds Fit
-function AP.Panel.AddSection(panel, heading, body)
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+-- Next free spot in the content column, gap below the previous element
+local function stack(panel, region, gap)
     if panel.lastRegion then
-        title:SetPoint("TOPLEFT", panel.lastRegion, "BOTTOMLEFT", 0, -AP.Panel.SECTION_GAP)
-        panel.contentHeight = panel.contentHeight + AP.Panel.SECTION_GAP
+        region:SetPoint("TOPLEFT", panel.lastRegion, "BOTTOMLEFT", 0, -gap)
+        panel.contentHeight = panel.contentHeight + gap
     else
-        title:SetPoint("TOPLEFT", panel, "TOPLEFT", AP.Panel.PAD, -AP.Panel.PAD_TOP)
+        region:SetPoint("TOPLEFT", panel, "TOPLEFT", Panel.INSET, -Panel.PAD_TOP)
     end
-    title:SetText(heading)
-
-    local text = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    text:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -AP.Panel.TEXT_GAP)
-    text:SetPoint("RIGHT", panel, "RIGHT", -AP.Panel.PAD, 0)
-    text:SetJustifyH("LEFT")
-    text:SetWordWrap(true)
-    text:SetText(body)
-
-    panel.contentHeight = panel.contentHeight + math.ceil(title:GetStringHeight()) + AP.Panel.TEXT_GAP + math.ceil(text:GetStringHeight())
-    panel.lastRegion = text
+    panel.lastRegion = region
 end
 
--- Full-width button under the previous section, the way Target Finder ends its panel
-function AP.Panel.AddButton(panel, text, onClick)
+-- Wrapped text across the content width in a Blizzard font object; the explicit width lets the height be measured before the first layout pass
+function Panel.AddText(panel, fontObject, text, gap)
+    local fontString = panel:CreateFontString(nil, "OVERLAY", fontObject)
+    fontString:SetWidth(panel:GetWidth() - 2 * Panel.INSET)
+    fontString:SetJustifyH("LEFT")
+    fontString:SetWordWrap(true)
+    fontString:SetText(text)
+    stack(panel, fontString, gap or Panel.SECTION)
+    panel.contentHeight = panel.contentHeight + math.ceil(fontString:GetStringHeight())
+    return fontString
+end
+
+-- Gold heading over white body text
+function Panel.AddSection(panel, heading, body)
+    Panel.AddText(panel, "GameFontNormal", heading)
+    Panel.AddText(panel, "GameFontHighlight", body, Panel.GAP)
+end
+
+-- Full-width button a section gap below the previous element
+function Panel.AddButton(panel, text, onClick)
     local button = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    button:SetHeight(AP.Panel.BUTTON_HEIGHT)
-    button:SetPoint("TOPLEFT", panel.lastRegion, "BOTTOMLEFT", 0, -AP.Panel.SECTION_GAP)
-    button:SetPoint("RIGHT", panel, "RIGHT", -AP.Panel.PAD, 0)
+    button:SetSize(panel:GetWidth() - 2 * Panel.INSET, Panel.BUTTON_HEIGHT)
     button:SetText(text)
     button:SetScript("OnClick", onClick)
-    panel.contentHeight = panel.contentHeight + AP.Panel.SECTION_GAP + AP.Panel.BUTTON_HEIGHT
-    panel.lastRegion = button
+    stack(panel, button, Panel.SECTION)
+    panel.contentHeight = panel.contentHeight + Panel.BUTTON_HEIGHT
     return button
 end
 
--- Height from the banner padding to the last section plus bottom padding
-function AP.Panel.Fit(panel)
-    panel:SetHeight(AP.Panel.PAD_TOP + panel.contentHeight + AP.Panel.PAD)
+-- Height from the header clearance to the last element plus the bottom inset
+function Panel.Fit(panel)
+    panel:SetHeight(Panel.PAD_TOP + panel.contentHeight + Panel.INSET)
 end

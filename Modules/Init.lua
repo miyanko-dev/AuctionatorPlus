@@ -1,6 +1,5 @@
 local _, AP = ...
 
-
 -- Seeded into AuctionatorPlusDB by the settings panel, which also uses the keys as its variable keys
 AP.Defaults = {
     sellThresholdPct = 15,

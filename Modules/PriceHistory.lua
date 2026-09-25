@@ -1,10 +1,11 @@
 local _, AP = ...
 
+-- Price-history statistics, the Relative Value and the tooltip rows; each client's half hooks its tooltips and defines AP.Tooltip.TrendMode
 AP.Trend = {}
 AP.Tooltip = {}
 
 -- ===== Price-history statistics =====
--- 14 days keeps the local average comparable to TSM's 14-day market value
+-- 14 days keeps the local average comparable to TSM's market value window
 local HISTORY_WINDOW_DAYS = 14
 
 -- Below this a quartile trim is too thin to stop same-side freak days, the median is safer
@@ -35,19 +36,16 @@ local function interquartileMean(prices)
     return total / count
 end
 
--- Match Auctionator's day index (days since SCAN_DAY_0), as carried by each entry's rawDay
+-- Auctionator's day index (days since SCAN_DAY_0), as carried by each history row's rawDay
 local function currentScanDay()
     return math.floor((time() - Auctionator.Constants.SCAN_DAY_0) / 86400)
 end
 
 -- Average minimum buyout inside the history window for one price-database key; nil without usable history
 local function averageFor(dbKey)
-    local ok, history = pcall(Auctionator.Database.GetPriceHistory, Auctionator.Database, dbKey)
-    if not ok or not history or #history == 0 then return nil end
-
     local cutoffDay = currentScanDay() - HISTORY_WINDOW_DAYS
     local recent = {}
-    for _, entry in ipairs(history) do
+    for _, entry in ipairs(AP.Bridge.PriceHistory(dbKey)) do
         local day = tonumber(entry.rawDay)
         local minSeen = tonumber(entry.minSeen)
         if (not day or day > cutoffDay) and minSeen and minSeen > 0 then
@@ -58,9 +56,9 @@ local function averageFor(dbKey)
     return math.floor(interquartileMean(recent) + 0.5)
 end
 
--- Prefer the first db key with usable history, so suffixed gear measures against its own suffix market before the pooled base item, matching Auctionator's price lookups
-function AP.Trend.AverageFor(itemLink)
-    for _, dbKey in ipairs(AP.Bridge.DBKeys(itemLink) or {}) do
+-- First key with usable history, so a suffix or item-level key measures against its own market before the pooled base item, matching Auctionator's price lookups
+function AP.Trend.AverageFor(itemRef)
+    for _, dbKey in ipairs(AP.Bridge.DBKeys(itemRef) or {}) do
         local average = averageFor(dbKey)
         if average and average > 0 then return average end
     end
@@ -79,11 +77,11 @@ function AP.Trend.Percent(currentPrice, average)
     return math.floor((currentPrice - average) / average * 100 + 0.5)
 end
 
--- Relative Value of a price for the listings: against Auctionator's average alone, or the mean of the Auctionator and TSM indices when both exist
-function AP.Trend.IndexFor(currentPrice, itemLink)
-    local localPct = AP.Trend.Percent(currentPrice, AP.Trend.AverageFor(itemLink))
+-- Relative Value for the listings: against Auctionator's average alone, or the mean of the Auctionator and TSM indices when both exist
+function AP.Trend.IndexFor(currentPrice, itemRef)
+    local localPct = AP.Trend.Percent(currentPrice, AP.Trend.AverageFor(itemRef))
     if not localPct then return nil end
-    local tsmPct = AP.Trend.Percent(currentPrice, AP.TSMFeed.MarketValueFor(itemLink))
+    local tsmPct = AP.Trend.Percent(currentPrice, AP.TSM.MarketValueFor(itemRef))
     if not tsmPct then return localPct end
     return math.floor((localPct + tsmPct) / 2 + 0.5)
 end
@@ -98,79 +96,34 @@ function AP.Trend.Colorize(pct, mode)
     return color:WrapTextInColorCode(string.format("%+d%%", pct))
 end
 
--- ===== Item tooltip lines =====
--- Reverse the colours in buying views (a price increase is bad for a buyer); IsVisible so a deselected Auctionator tab does not register as active
-function AP.Tooltip.TrendMode()
-    if _G.AuctionatorShoppingFrame and _G.AuctionatorShoppingFrame:IsVisible() then
-        return AP.Trend.UP_RED
-    end
-    if _G.AuctionFrameBrowse and _G.AuctionFrameBrowse:IsVisible() then
-        return AP.Trend.UP_RED
-    end
-    return AP.Trend.UP_GREEN
-end
-
+-- ===== Item tooltip rows =====
 local function addRow(tooltip, label, text)
     if text then
         tooltip:AddDoubleLine(label, text, 1, 1, 1, 1, 1, 1)
     end
 end
 
--- "Average Price (Auctionator 2d)": the source and its data age in brackets, age omitted when unknown
-local function sourceLabel(name, source, age)
-    return ("%s (%s%s)"):format(name, source, age and (" " .. age) or "")
-end
-
 -- Auctionator's history is daily; "<1d" covers a scan from today
-local function daysText(days)
-    if not days then return nil end
-    return days < 1 and "<1d" or (days .. "d")
+local function ageLabel(days)
+    if not days then return "Average Price (Auctionator)" end
+    return ("Average Price (Auctionator %s)"):format(days < 1 and "<1d" or (days .. "d"))
 end
 
--- Averages first, then the Relative Value of the last known price against each, then the sale rate; rows without data stay silent and Auctionator's own vendor and auction lines are left untouched
-function AP.Tooltip.Apply(tooltip, itemLink)
-    if not tooltip or not itemLink then return end
-
+-- Averages first, then the Relative Value of the last known price against each, then the sale rate; rows without data stay silent and Auctionator's own lines are left untouched
+function AP.Tooltip.AddPriceRows(tooltip, itemLink)
     local average = AP.Trend.AverageFor(itemLink)
-    local tsmMarket = AP.TSMFeed.MarketValueFor(itemLink)
+    local tsmMarket = AP.TSM.MarketValueFor(itemLink)
     if not (average or tsmMarket) then return end
 
     local auction = AP.Bridge.AuctionPrice(itemLink)
     local mode = AP.Tooltip.TrendMode()
-    local money = Auctionator.Utilities.CreatePaddedMoneyString
     tooltip:AddLine(" ")
-    addRow(tooltip, sourceLabel("Average Price", "Auctionator", daysText(AP.Bridge.PriceAge(itemLink))), average and money(average))
-    addRow(tooltip, sourceLabel("Average Price", "TSM", AP.TSMFeed.AgeText()), tsmMarket and money(tsmMarket))
+    addRow(tooltip, ageLabel(AP.Bridge.PriceAge(itemLink)), average and AP.Bridge.Money(average))
+    addRow(tooltip, "Average Price (TSM)", tsmMarket and AP.Bridge.Money(tsmMarket))
     addRow(tooltip, "Relative Value (Auctionator)", AP.Trend.Colorize(AP.Trend.Percent(auction, average), mode))
     addRow(tooltip, "Relative Value (TSM)", AP.Trend.Colorize(AP.Trend.Percent(auction, tsmMarket), mode))
-    addRow(tooltip, "Sale Rate (TSM)", AP.TSMFeed.SaleRateText(itemLink))
+    addRow(tooltip, "Sale Rate (TSM)", AP.TSM.SaleRateText(itemLink))
 
-    -- Trigger a resize so newly added lines render inside the tooltip frame
+    -- Resize so the added lines render inside the tooltip frame
     tooltip:Show()
 end
-
--- ===== Tooltip hooks =====
--- Hook only the item-setting methods that exist on this client; the list spans several flavors
-local TOOLTIP_METHODS = {
-    "SetBagItem", "SetBuybackItem", "SetMerchantItem", "SetInventoryItem",
-    "SetGuildBankItem", "SetLootItem", "SetLootRollItem",
-    "SetQuestItem", "SetQuestLogItem", "SetSendMailItem", "SetInboxItem",
-    "SetTradePlayerItem", "SetTradeTargetItem", "SetAuctionItem",
-    "SetItemByID", "SetHyperlink", "SetTradeSkillItem", "SetCraftItem",
-    "SetItemByGUID", "SetRecipeReagentItem", "SetRecipeResultItem",
-    "SetItemKey",
-}
-
-local function dispatch(tooltip)
-    if not tooltip or not tooltip.GetItem then return end
-    local _, link = tooltip:GetItem()
-    if not link or link == "" then return end
-    pcall(AP.Tooltip.Apply, tooltip, link)
-end
-
-for _, methodName in ipairs(TOOLTIP_METHODS) do
-    if GameTooltip[methodName] then
-        hooksecurefunc(GameTooltip, methodName, dispatch)
-    end
-end
-hooksecurefunc(ItemRefTooltip, "SetHyperlink", dispatch)
