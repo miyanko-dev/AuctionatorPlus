@@ -9,7 +9,7 @@ Verified against:
 - the installed Auctionator 339 (its mainline/camelot load set: `Source/`, `Source_Mainline/`, `Source_ModernAH/`, `Source_Forever/`) and TradeSkillMaster v4.14.77
 - the installed client 1.60.1.70009
 
-Nothing has run in a client. `luac -p` passes on all 15 Lua files. A stubbed load test (session scratchpad, not kept in the repo) loads the toc in order against mocks and the real enUS strings and passes 80/80: load, login and AH-open bootstrap, default seeding, the stat parser, the AP-1 gating/yield/timeout paths, the AP-12 Sale Scan paths, the sale-rate removal, the AP-2 scan-mode routing and labels, and the Similar retry paths. Mutations of the new code (no resume, no visibility check, no frame delay, always replicate, replicate events only) each fail it.
+Nothing has run in a client. `luac -p` passes on all 15 Lua files. A stubbed load test (session scratchpad, not kept in the repo) loads the toc in order against mocks and the real enUS strings and passes 86/86: load, login and AH-open bootstrap, default seeding, the stat parser, the AP-1 gating/yield/timeout paths, the AP-12 Sale Scan paths, the sale-rate removal, the AP-2 scan-mode routing, labels and shopping-search refusal, and the Similar retry paths. Mutations of the new code (no resume, no visibility check, no frame delay, always replicate, replicate events only, no refusal, no red line) each fail it.
 
 ## Current state
 
@@ -25,8 +25,8 @@ A companion for Auctionator that adds:
 | Item | State |
 |---|---|
 | Version | 4.0.0. `## Interface: 16001`, `## Category: Auctions`, `## IconTexture: 133784`, `## Dependencies: Auctionator`, `## OptionalDeps: TradeSkillMaster`, `## SavedVariables: AuctionatorPlusDB`. No compartment entry, no slash command |
-| Git | `1.15.x-backup` = `origin/1.15.x-backup` = `a4e59d8` (3.0.0, dual-client, last commit with Classic code). `main` has three local commits on top of `a4e59d8`, not pushed: the split/UI commit `c3186b4`, the fixes commit `1e3f8d3` and the round-2 decisions commit. History is linear. No tags |
-| Lua | 3,105 lines in 28 files before the split, 2,184 in 15 after it, 2,194 in 15 after round 2 |
+| Git | `1.15.x-backup` = `origin/1.15.x-backup` = `a4e59d8` (3.0.0, dual-client, last commit with Classic code). `main` has four local commits on top of `a4e59d8`, not pushed: the split/UI commit `c3186b4`, the fixes commit `1e3f8d3`, the round-2 decisions commit `58fc9c7` and the Full Scan refusal commit. History is linear. No tags |
+| Lua | 3,105 lines in 28 files before the split, 2,184 in 15 after it, 2,208 in 15 after round 2 |
 
 Layout:
 
@@ -93,7 +93,7 @@ Done in round 2 (owner decisions, still 4.0.0):
 
 | ID | What was done |
 |---|---|
-| AP-2 | Plus Full Scan reads Auctionator's `REPLICATE_SCAN` at click time: on, `FullScanFrameRef:InitiateScan()` (replicate); off, the default, `IncrementalScanFrameRef:InitiateScan()`. That is exactly Auctionator's `ScanButton.lua:3-8`. The label follows the ScanStart/Progress/Complete/Failed events of both `FullScan.Events` and `IncrementalScan.Events`. The tooltip names the mode, with a "one scan every 15 minutes" line only in replicate mode |
+| AP-2 | Plus Full Scan reads Auctionator's `REPLICATE_SCAN` at click time: on, `FullScanFrameRef:InitiateScan()` (replicate); off, the default, `IncrementalScanFrameRef:InitiateScan()`. That is exactly Auctionator's `ScanButton.lua:3-8`. The label follows the ScanStart/Progress/Complete/Failed events of both `FullScan.Events` and `IncrementalScan.Events`. The tooltip names the mode, with a "one scan every 15 minutes" line only in replicate mode. Lead's follow-up: while `AuctionatorShoppingFrame.searchRunning`, a click on either Plus Full Scan does nothing and the tooltip shows a red `GameTooltip_AddErrorLine`. This mirrors Sale Scan's slotted-item refusal (`hasSaleItem`/`addSlottedWarning` through `AP.Panel.CreateTabButton`'s tooltip hook). The refusal holds in both modes, although only the incremental scan shares the browse result set |
 | AP-3 | Resolved by removing sale rate (see "Sale rate" above) |
 | AP-4 | Decided: the sale-rate parts are removed. The TSM market-value parts stay as they are, hidden until TSM ships for Forever |
 | AP-18 | Decided: the sale-slot icon keeps its glow (no code change) |
@@ -127,10 +127,7 @@ Still open, blocked on the owner:
 Open questions:
 
 - No slash command exists. Settings open only from the Auctionator tab button and the Guide. Adding `/ap` means one `SlashCmdList` entry in `UI/Settings.lua` calling `AP.SettingsPanel.Open`.
-- New in round 2 (AP-2): the Shopping tab's Plus Full Scan now starts the incremental browse scan in Auctionator's default mode. Auctionator's own Full Scan button sits on the Auctionator tab, and the Shopping tab's `OnHide` stops a running shopping search, so Auctionator never overlaps the two. The Plus button sits on the Shopping tab, so a click during a running shopping search makes both page the one browse result set. `Auctionator.AH.Queue` only throttles, it doesn't serialise (`Source_ModernAH/AH/Wrappers.lua:47-58`). Before round 2 the button always ran the replicate scan, which doesn't touch browse results. Options:
-  - Keep it: results of that search can come back incomplete or mixed.
-  - Refuse while `AuctionatorShoppingFrame.searchRunning`, with a red tooltip line like Sale Scan (about +6 lines).
-  - Stop the search first with `AuctionatorShoppingFrame:StopSearch()` (about +3 lines, another internal).
+- Resolved in round 2 (lead): the Shopping tab's Plus Full Scan would have started the incremental browse scan during a running shopping search. Auctionator's own button never meets that case, since leaving the Shopping tab stops the search. Both then page the one browse result set, because `Auctionator.AH.Queue` only throttles (`Source_ModernAH/AH/Wrappers.lua:47-58`). The button now refuses while a search runs (AP-2 row above).
 
 ## Blockers, issues, challenges
 
@@ -141,7 +138,7 @@ Open questions:
 
 ## Next steps
 
-1. Owner decisions: AP-15, the slash command, and the Shopping-tab Full Scan overlap (round 2).
+1. Owner decisions: AP-15 and the slash command.
 2. Push `main` once the in-game checks below pass.
 3. Enable only Auctionator and AuctionatorPlus, then run `/console scriptErrors 1` and `/reload`.
 
@@ -154,6 +151,7 @@ Forever checks:
 - [ ] Selling, Show Similar Items: left-click takes the exact price, right-click does nothing, shift links, ctrl previews. Show Similar Bags matches slot count.
 - [ ] Sale Scan counts, cancels and stops on item select. With an item slotted, a click does nothing and the tooltip shows the red line.
 - [ ] AP-2, default mode: Plus Full Scan prints Auctionator's "Starting a full scan (summary mode).", counts up to green on both Plus buttons and on Auctionator's own status, and a click during the scan prints "Full scan in progress.". Tooltip without the 15-minute line.
+- [ ] AP-2 refusal: start a shopping list search, then hover and click Plus Full Scan while it runs. Nothing starts, and the tooltip shows the red "Wait for the shopping search to finish first." line. After the search ends, the line is gone and a click starts the scan.
 - [ ] AP-2, Auctionator's Advanced "Alternate Scan Mode" on: it prints "(replicate mode)", goes green, and a second click gives Auctionator's cooldown message. Tooltip shows the 15-minute line.
 - [ ] Settings page: no "Minimum sale rate" slider. Tooltips show no "Sale Rate (TSM)" row.
 - [ ] Settings persist across `/reload`. A fresh WTF shows the defaults before the settings panel is opened.

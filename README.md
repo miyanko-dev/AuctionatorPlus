@@ -11,7 +11,7 @@ A companion for [Auctionator](https://www.curseforge.com/wow/addons/auctionator)
 - **Price from comparables** — hover a comparable row to preview the item, click it to take over its exact unit price for your own listing
 - **Filter by Stat** — a *Filter* button in the shopping tab gates results by primary stats, attack power, hit, critical strike, haste, expertise, armor piercing, defense, spell power (also by school), spell healing, spell hit, spell crit, spell piercing and mana regeneration, with match-all or match-any. Only equipment is constrained, so consumable searches never come back empty.
 - **Green bag glow** — items in the Selling tab's bag panel whose last known price beats the averages by your threshold (default +15%) get a green glow over their icon
-- **Full Scan** — a button in both the shopping and Selling tabs starts Auctionator's full scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button, with a live progress readout for either mode
+- **Full Scan** — a button in both the shopping and Selling tabs starts Auctionator's full scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button, with a live progress readout for either mode. It doesn't start while a shopping search runs.
 - **Sale Scan** — runs a live price search for every distinct item in your bag panel, so the Relative column and the glow reflect current prices instead of your last full scan. It needs an empty sale slot.
 - **Guide** — a short list of what the addon adds, shown once per character at login
 

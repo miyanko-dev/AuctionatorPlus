@@ -106,20 +106,34 @@ AP.Bridge.Listen(scanEvents, function(_, eventName, eventData)
     end
 end)
 
--- Only the replicate scan has a cooldown, so the line shows only while that mode is on
-local function addModeLine(tooltip)
+-- The incremental scan and a shopping search would page the client's one browse result set at once; Auctionator's own button never meets a running search, since leaving the Shopping tab stops it
+local function shoppingSearchRunning()
+    local shoppingFrame = AuctionatorShoppingFrame
+    return shoppingFrame ~= nil and shoppingFrame.searchRunning == true
+end
+
+local function start()
+    if shoppingSearchRunning() then return end
+    AP.Bridge.StartFullScan()
+end
+
+-- Only the replicate scan has a cooldown, so that line shows only while its mode is on
+local function addStateLines(tooltip)
     if AP.Bridge.IsReplicateScan() then
         GameTooltip_AddNormalLine(tooltip, "Alternate Scan Mode is on: one scan every 15 minutes.", true)
+    end
+    if shoppingSearchRunning() then
+        GameTooltip_AddErrorLine(tooltip, "Wait for the shopping search to finish first.", true)
     end
 end
 
 -- One Full Scan button, painted with the running scan's label; the caller anchors it
 local function createButton(name, parent)
     local button = AP.Panel.CreateTabButton(name, parent, BUTTON_LABEL, "Auctionator Full Scan",
-        "Runs Auctionator's full auction-house scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button.",
-        addModeLine)
+        "Runs Auctionator's full auction-house scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button. Needs no shopping search running.",
+        addStateLines)
     paintButton(button, lastText)
-    button:SetScript("OnClick", AP.Bridge.StartFullScan)
+    button:SetScript("OnClick", start)
     return button
 end
 
