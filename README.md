@@ -28,7 +28,7 @@ Copy the `AuctionatorPlus/` folder into `World of Warcraft/_classic_beta_/Interf
 
 ## Settings
 
-The **Auctionator Plus Options** button on Auctionator's own tab opens the panel under Options > AddOns: bag-glow sell threshold, whether both relative values must reach it, and the level, weapon DPS, stat value and stat count ranges used for similar items.
+Type `/aplus` (or `/auctionatorplus`), pick **Auctionator Plus** in the addon menu at the minimap, or press the **Auctionator Plus Options** button on Auctionator's own tab. All three open the panel under Options > AddOns: bag-glow sell threshold, whether both relative values must reach it, and the level, weapon DPS, stat value and stat count ranges used for similar items.
 
 ## Requirements
 

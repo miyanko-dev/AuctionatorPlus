@@ -8,6 +8,9 @@
 ## Dependencies: Auctionator
 ## OptionalDeps: TradeSkillMaster
 ## SavedVariables: AuctionatorPlusDB
+## AddonCompartmentFunc: AuctionatorPlus_CompartmentClick
+## AddonCompartmentFuncOnEnter: AuctionatorPlus_CompartmentEnter
+## AddonCompartmentFuncOnLeave: AuctionatorPlus_CompartmentLeave
 
 Modules\Init.lua
 Modules\Bridge.lua

@@ -74,7 +74,7 @@ Other facts:
   - Buttons inside Auctionator's frames match their neighbours: Full Scan and Sale Scan are fixed 110x22 `UIPanelButtonTemplate` (their labels change during a scan), Filter, Reset and the options button are `UIPanelDynamicResizeButtonTemplate` like Auctionator's Export Results and Open Addon Options.
   - Text uses Blizzard font objects only. Tooltip rows use `GameTooltip_AddColoredDoubleLine` with `HIGHLIGHT_FONT_COLOR` and `GameTooltip_AddBlankLineToTooltip`. The Full Scan tooltip's replicate-mode line uses `GameTooltip_AddNormalLine` (`Blizzard_SharedXML/SharedTooltipTemplates.lua:142`). The bag glow is Blizzard's own `bags-glow-green` atlas (`Blizzard_UIPanels_Game/Mainline/ContainerFrame.xml:121`).
   - No tool window, scroll frame or minimap button exists, so spec items 1, 2 and 8 don't apply.
-- The Addon Compartment is available on Forever. There is no entry (AP-15, blocked).
+- The Addon Compartment entry opens the settings (AP-15, done; see Launchers).
 - Colours and chat (cross-addon rule, round 2): the addon has no literal `|cff` codes. Colours come from `GREEN_FONT_COLOR`, `RED_FONT_COLOR` and `HIGHLIGHT_FONT_COLOR` (`WrapTextInColorCode`, `GameTooltip_AddColoredDoubleLine`). The addon prints no chat lines, so the shared `[Auctionator Plus]:` prefix has no user yet. A future chat line must start with `YELLOW_FONT_COLOR:WrapTextInColorCode("[Auctionator Plus]:") .. " "`. The chat lines a Plus Full Scan triggers ("Starting a full scan ...", cooldown, "Finished processing") are Auctionator's own.
 
 ## Sale rate: removed until TSM ships for Forever
@@ -122,7 +122,7 @@ Still open, blocked on the owner:
 
 | ID | Severity | Finding | Options |
 |---|---|---|---|
-| AP-15 | Low | No `## AddonCompartmentFunc` | Add one that opens settings |
+| AP-15 | Low | Done (owner decision): compartment entry and `/aplus` open the settings | — |
 
 Open questions:
 
@@ -138,7 +138,7 @@ Open questions:
 
 ## Next steps
 
-1. Owner decisions: AP-15 and the slash command.
+1. Owner decisions: none open.
 2. Push `main` once the in-game checks below pass.
 3. Enable only Auctionator and AuctionatorPlus, then run `/console scriptErrors 1` and `/reload`.
 
@@ -164,3 +164,9 @@ Forever checks:
 - [ ] `/dump C_AuctionHouse.GetBrowseResults()[1].itemKey` on an "of the X" item: is the suffix id present?
 - [ ] `/dump WOW_PROJECT_ID`.
 - [ ] Record the stat wording: `/run local t=C_TooltipInfo.GetHyperlink(select(2,C_Item.GetItemInfo(<id>))) for _,l in ipairs(t.lines) do print(l.leftText) end`.
+
+## Launchers (owner decision 2026-09-30)
+
+- AP-15 done: an Addon Compartment entry opens the settings (`AuctionatorPlus_CompartmentClick`/`Enter`/`Leave` in `UI/Settings.lua`, named in the toc). Its tooltip is the title plus one instruction line.
+- New slash command `/aplus` and `/auctionatorplus` opens the settings. `/ap` is taken by Blizzard's commentator commands (`SLASH_COMMENTATOR_ASSIGNPLAYER3`), so it isn't used.
+- `AP.SettingsPanel.Open` does nothing before the category is registered at `PLAYER_LOGIN`.

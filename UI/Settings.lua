@@ -61,7 +61,28 @@ function AP.SettingsPanel.Register()
 end
 
 function AP.SettingsPanel.Open()
+    if not category then return end
     Settings.OpenToCategory(category:GetID())
+end
+
+-- /ap already belongs to Blizzard's commentator commands, so the short form is /aplus.
+SLASH_AUCTIONATORPLUS1, SLASH_AUCTIONATORPLUS2 = "/aplus", "/auctionatorplus"
+SlashCmdList.AUCTIONATORPLUS = AP.SettingsPanel.Open
+
+-- Addon Compartment entry points named in the toc. Blizzard calls them with the addon name first, then the menu row.
+function AuctionatorPlus_CompartmentClick()
+    AP.SettingsPanel.Open()
+end
+
+function AuctionatorPlus_CompartmentEnter(_, menuButton)
+    GameTooltip:SetOwner(menuButton, "ANCHOR_LEFT")
+    GameTooltip_SetTitle(GameTooltip, "Auctionator Plus")
+    GameTooltip_AddInstructionLine(GameTooltip, "Click to open the settings.")
+    GameTooltip:Show()
+end
+
+function AuctionatorPlus_CompartmentLeave()
+    GameTooltip:Hide()
 end
 
 -- Sits left of Auctionator's own "Open Addon Options" button on its tab; that tab frame exists once the AH has opened
