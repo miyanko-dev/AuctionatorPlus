@@ -25,7 +25,7 @@ A companion for Auctionator that adds:
 | Item | State |
 |---|---|
 | Version | 4.0.0. `## Interface: 16001`, `## Category: Auctions`, `## IconTexture: 133784`, `## Dependencies: Auctionator`, `## OptionalDeps: TradeSkillMaster`, `## SavedVariables: AuctionatorPlusDB`. No compartment entry, no slash command |
-| Git | `1.15.x-backup` = `origin/1.15.x-backup` = `a4e59d8` (3.0.0, dual-client, last commit with Classic code). `main` has five local commits on top of `a4e59d8`, not pushed: the split/UI commit `c3186b4`, the fixes commit `1e3f8d3`, the round-2 decisions commit `58fc9c7`, the Full Scan refusal commit `ad84029` and the commit that limits it to incremental mode. History is linear. No tags |
+| Git | `1.15.x-backup` = `origin/1.15.x-backup` = `a4e59d8` (3.0.0, dual-client, last commit with Classic code). `main` has local commits on top of `a4e59d8`, not pushed (`git log origin/main..main`): the split/UI commit `c3186b4`, the fixes commit `1e3f8d3`, the round-2 decisions commit `58fc9c7`, then the Full Scan refusal (`ad84029`), its limit to incremental mode (`7e32b61`), its tooltip wording (`39f58c2`) and this MEMORY.md fix. History is linear. No tags |
 | Lua | 3,105 lines in 28 files before the split, 2,184 in 15 after it, 2,208 in 15 after round 2 |
 
 Layout:
