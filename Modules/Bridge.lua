@@ -111,9 +111,20 @@ function AP.Bridge.RefreshSellSearch()
 end
 
 -- ===== Auction house =====
--- Auctionator's replicate full scan, which it rate-limits itself
+-- Whether Auctionator's "Alternate Scan Mode" option is on: Auctionator then runs the replicate scan, allowed once per 15 minutes, and otherwise (its default) the incremental browse scan
+function AP.Bridge.IsReplicateScan()
+    return Auctionator.Config.Get(Auctionator.Config.Options.REPLICATE_SCAN)
+end
+
+-- Start the full scan the way Auctionator's own Full Scan button does; both scan frames exist once the AH has opened
 function AP.Bridge.StartFullScan()
-    local scanFrame = Auctionator.State.FullScanFrameRef
+    local state = Auctionator.State
+    local scanFrame
+    if AP.Bridge.IsReplicateScan() then
+        scanFrame = state.FullScanFrameRef
+    else
+        scanFrame = state.IncrementalScanFrameRef
+    end
     if scanFrame then scanFrame:InitiateScan() end
 end
 

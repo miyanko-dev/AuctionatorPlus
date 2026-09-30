@@ -122,7 +122,7 @@ local function trendMode()
     return AP.Trend.UP_RED
 end
 
--- Averages first, then the Relative Value of the last known price against each, then the sale rate; rows without data stay silent and Auctionator's own lines are left untouched
+-- Averages first, then the Relative Value of the last known price against each; rows without data stay silent and Auctionator's own lines are left untouched
 local function addPriceRows(tooltip, itemLink)
     local average = AP.Trend.AverageFor(itemLink)
     local tsmMarket = AP.TSM.MarketValueFor(itemLink)
@@ -135,7 +135,6 @@ local function addPriceRows(tooltip, itemLink)
     addRow(tooltip, "Average Price (TSM)", tsmMarket and AP.Bridge.Money(tsmMarket))
     addRow(tooltip, "Relative Value (Auctionator)", AP.Trend.Colorize(AP.Trend.Percent(auction, average), mode))
     addRow(tooltip, "Relative Value (TSM)", AP.Trend.Colorize(AP.Trend.Percent(auction, tsmMarket), mode))
-    addRow(tooltip, "Sale Rate (TSM)", AP.TSM.SaleRateText(itemLink))
 
     -- Resize so the added lines render inside the tooltip frame
     tooltip:Show()

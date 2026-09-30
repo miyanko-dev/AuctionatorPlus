@@ -1,6 +1,6 @@
 local _, AP = ...
 
--- Full Scan buttons with a live progress label, on the shopping tab's Export Results row and under the selling tab's prices inset, as AP.shoppingScanButton and AP.sellingScanButton
+-- Full Scan buttons with a live progress label for either scan mode, on the shopping tab's Export Results row and under the selling tab's prices inset, as AP.shoppingScanButton and AP.sellingScanButton
 AP.FullScanButton = {}
 
 local BUTTON_LABEL = "Full Scan"
@@ -76,18 +76,22 @@ local function showFinal(pct, color)
     end)
 end
 
-local scanEvents = Auctionator.FullScan.Events
+-- Both scan modes report the same four steps under their own event names; Auctionator's own scan status listens to both sets the same way
+local SCAN_STEPS = { "ScanStart", "ScanProgress", "ScanComplete", "ScanFailed" }
+local stepOf, scanEvents = {}, {}
+for _, events in ipairs({ Auctionator.FullScan.Events, Auctionator.IncrementalScan.Events }) do
+    for _, step in ipairs(SCAN_STEPS) do
+        stepOf[events[step]] = step
+        scanEvents[#scanEvents + 1] = events[step]
+    end
+end
 
-AP.Bridge.Listen({
-    scanEvents.ScanStart,
-    scanEvents.ScanProgress,
-    scanEvents.ScanComplete,
-    scanEvents.ScanFailed,
-}, function(_, eventName, eventData)
-    if eventName == scanEvents.ScanStart then
+AP.Bridge.Listen(scanEvents, function(_, eventName, eventData)
+    local step = stepOf[eventName]
+    if step == "ScanStart" then
         scanActive = true
         showProgress(0)
-    elseif eventName == scanEvents.ScanProgress then
+    elseif step == "ScanProgress" then
         if not scanActive then return end
         local pct = math.floor((eventData or 0) * 100)
         if pct >= 100 then
@@ -95,17 +99,25 @@ AP.Bridge.Listen({
         else
             showProgress(pct)
         end
-    elseif eventName == scanEvents.ScanComplete then
+    elseif step == "ScanComplete" then
         showFinal(100, GREEN_FONT_COLOR)
-    elseif eventName == scanEvents.ScanFailed then
+    elseif step == "ScanFailed" then
         showFinal(lastPct, RED_FONT_COLOR)
     end
 end)
 
+-- Only the replicate scan has a cooldown, so the line shows only while that mode is on
+local function addModeLine(tooltip)
+    if AP.Bridge.IsReplicateScan() then
+        GameTooltip_AddNormalLine(tooltip, "Alternate Scan Mode is on: one scan every 15 minutes.", true)
+    end
+end
+
 -- One Full Scan button, painted with the running scan's label; the caller anchors it
 local function createButton(name, parent)
     local button = AP.Panel.CreateTabButton(name, parent, BUTTON_LABEL, "Auctionator Full Scan",
-        "Runs the Auctionator full auction-house scan. Available once every 15 minutes.")
+        "Runs Auctionator's full auction-house scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button.",
+        addModeLine)
     paintButton(button, lastText)
     button:SetScript("OnClick", AP.Bridge.StartFullScan)
     return button

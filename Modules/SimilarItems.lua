@@ -68,12 +68,13 @@ local BROWSE_EVENTS = {
     "AUCTION_HOUSE_BROWSE_FAILURE",
 }
 
--- profile describes the sale item while comparables are gathered; a new sale search replaces it, which retires every callback still holding the old one. browsing is true while the browse listener pages results
+-- profile describes the sale item while comparables are gathered; a new sale search replaces it, which retires every callback still holding the old one. browsing is true while the browse listener pages results, waiting while the browse waits for a shopping search or an incremental scan to end
 local watch = {
     saleLink = nil,
     saleKind = nil,
     profile = nil,
     browsing = false,
+    waiting = false,
 }
 
 local browseFrame = CreateFrame("Frame")
@@ -361,17 +362,24 @@ end
 
 local function cancel()
     watch.profile = nil
+    watch.waiting = false
     stopBrowse()
 end
 
--- Every sell search of the slotted item restarts the comparables, so Refresh and re-drops stay in step with the listing; none start while another browse owns the result set
+-- Every sell search of the slotted item restarts the comparables, so Refresh and re-drops stay in step with the listing; while another browse owns the result set the profile waits for it to end
 local function onSellSearch(itemLink)
     cancel()
     trackSaleItem(itemLink)
-    if not isWanted(watch.saleKind) or browseBusy() then return end
+    if not isWanted(watch.saleKind) then return end
 
     local profile = profileFor(itemLink)
-    if profile then startBrowse(profile) end
+    if not profile then return end
+    if browseBusy() then
+        watch.profile = profile
+        watch.waiting = true
+    else
+        startBrowse(profile)
+    end
 end
 
 -- Marks that the listing has its own results, so merged rows can no longer be wiped by them
@@ -383,9 +391,20 @@ local function onNativeResults(itemID)
     end
 end
 
--- A browse still paging gives way to one Auctionator starts; finished comparables stay, since their rows no longer need the result set
+-- A browse still paging gives way to one Auctionator starts and waits for it to end; finished comparables stay, since their rows no longer need the result set
 local function yieldBrowse()
-    if watch.browsing then cancel() end
+    if not watch.browsing then return end
+    stopBrowse()
+    watch.waiting = true
+end
+
+-- Run the waiting browse once the search or scan it waited for has ended, a frame later because a new shopping search first ends the old one. Only while the Selling tab is open; the profile is always the selected item's, since a new selection or a cleared slot replaces or drops it
+local function resumeBrowse()
+    C_Timer.After(0, function()
+        if not watch.waiting or browseBusy() or not AuctionatorSellingFrame:IsVisible() then return end
+        watch.waiting = false
+        startBrowse(watch.profile)
+    end)
 end
 
 AP.Bridge.Listen({
@@ -394,7 +413,10 @@ AP.Bridge.Listen({
     Auctionator.AH.Events.ItemSearchResultsReady,
     Auctionator.AH.Events.CommoditySearchResultsReady,
     Auctionator.Shopping.Tab.Events.SearchStart,
+    Auctionator.Shopping.Tab.Events.SearchEnd,
     Auctionator.IncrementalScan.Events.ScanStart,
+    Auctionator.IncrementalScan.Events.ScanComplete,
+    Auctionator.IncrementalScan.Events.ScanFailed,
 }, function(_, eventName, first, second)
     if eventName == Auctionator.Selling.Events.SellSearchStart then
         onSellSearch(second)
@@ -407,6 +429,8 @@ AP.Bridge.Listen({
         onNativeResults(first)
     elseif eventName == Auctionator.Shopping.Tab.Events.SearchStart or eventName == Auctionator.IncrementalScan.Events.ScanStart then
         yieldBrowse()
+    else
+        resumeBrowse()
     end
 end)
 

@@ -8,7 +8,6 @@ AP.Defaults = {
     dpsTolerancePct = 20,
     statValueTolerance = 30,
     statCountTolerance = 0,
-    minSaleRate = 0,
     guideAtLogin = true,
 }
 

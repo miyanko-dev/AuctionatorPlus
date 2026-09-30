@@ -8,14 +8,12 @@ local function bandPercent(value) return ("±%d%%"):format(value) end
 
 local function levels(value) return ("±%d levels"):format(value) end
 local function plusMinus(value) return ("±%d"):format(value) end
-local function percentOff(value) return value == 0 and "Off" or ("%d%%"):format(value) end
 
 -- Sections in display order; a control is key, label, tooltip, then min, max, step, value formatter for sliders or checkbox = true
 local SECTIONS = {
     { "Bag glow", {
         { "sellThresholdPct", "Sell threshold", "Bag items glow green once a Relative Value reaches this.", 5, 100, 1, plusPercent },
         { "glowRequireBoth", "Require both values", "Checked: both the Auctionator and the TSM Relative Value must reach the threshold, where TSM has data. Unchecked: one is enough.", checkbox = true },
-        { "minSaleRate", "Minimum sale rate", "Bag items whose TSM sale rate (share of posted auctions that sell, region-wide) sits under this never glow. Off skips the check.", 0, 100, 5, percentOff },
     } },
     { "Similar items", {
         { "levelTolerance", "Level range", "Comparable gear may require a level this far above or below the sale item.", 0, 10, 1, levels },

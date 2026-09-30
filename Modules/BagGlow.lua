@@ -5,12 +5,9 @@ AP.BagGlow = {}
 -- The atlas the default bags use for new uncommon items; bright under ADD blending, so it stays visible next to green-quality borders
 local GLOW_ATLAS = "bags-glow-green"
 
--- Glow once the Relative Values reach the sell threshold: both of them when "Require both values" is on and TSM has data, otherwise any one; items whose TSM sale rate sits under the floor never glow
+-- Glow once the Relative Values reach the sell threshold: both of them when "Require both values" is on and TSM has data, otherwise any one
 local function favorable(itemLink)
     local db = AP.DB()
-    local rate = AP.TSM.SalePercentFor(itemLink)
-    if rate and rate < db.minSaleRate then return false end
-
     local price = AP.Bridge.AuctionPrice(itemLink)
     local localPct = AP.Trend.Percent(price, AP.Trend.AverageFor(itemLink))
     local tsmPct = AP.Trend.Percent(price, AP.TSM.MarketValueFor(itemLink))
