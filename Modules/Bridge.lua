@@ -131,10 +131,10 @@ function AP.Bridge.BrowseMore()
     pcall(Auctionator.AH.RequestMoreBrowseResults)
 end
 
--- Single-item search through Auctionator's retrying scanner; gear uses the sell search so every suffix variant answers
+-- Single-item search through Auctionator's retrying scanner, with owned auctions split out as Auctionator's own searches do; gear uses the sell search so every suffix variant answers
 function AP.Bridge.SearchItem(itemKey, isGear)
     if isGear then
-        return pcall(Auctionator.AH.SendSellSearchQueryByItemKey, itemKey, { Auctionator.Constants.ItemResultsSorts }, false)
+        return pcall(Auctionator.AH.SendSellSearchQueryByItemKey, itemKey, { Auctionator.Constants.ItemResultsSorts }, true)
     end
-    return pcall(Auctionator.AH.SendSearchQueryByItemKey, itemKey, { Auctionator.Constants.CommodityResultsSorts }, false)
+    return pcall(Auctionator.AH.SendSearchQueryByItemKey, itemKey, { Auctionator.Constants.CommodityResultsSorts }, true)
 end

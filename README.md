@@ -6,13 +6,13 @@ A companion for [Auctionator](https://www.curseforge.com/wow/addons/auctionator)
 
 - **Price-history tooltips** — item tooltips show the Auctionator 14-day average price and the TSM market value, plus the item's relative value against them and the TSM sale rate
 - **Relative Value column** — shopping results, the shopping buy screen and the Selling tab's current prices gain a *Relative* column, green when the price is favourable, so underpriced deals stand out
-- **Show Similar Items** — select a piece of gear to sell and a background search finds auctions of items with the same slot and armor or weapon type, at a similar required level, carrying the same stats within a tolerance you set. Weapons must also land in a DPS range.
+- **Show Similar Items** — select a piece of gear to sell and a background search finds auctions of items with the same slot and armor or weapon type, at a similar required level, carrying the same stats within a tolerance you set. Weapons must also land in a DPS range. The search waits while Auctionator's own shopping search or full scan runs, and gives way when one starts.
 - **Show Similar Bags** — the same checkbox for containers, listing bags with the same slot count
 - **Price from comparables** — hover a comparable row to preview the item, click it to take over its exact unit price for your own listing
 - **Filter by Stat** — a *Filter* button in the shopping tab gates results by primary stats, attack power, hit, critical strike, haste, expertise, armor piercing, defense, spell power (also by school), spell healing, spell hit, spell crit, spell piercing and mana regeneration, with match-all or match-any. Only equipment is constrained, so consumable searches never come back empty.
 - **Green bag glow** — items in the Selling tab's bag panel whose last known price beats the averages by your threshold (default +15%) get a green glow over their icon
 - **Full Scan** — a button in both the shopping and Selling tabs starts Auctionator's full scan, with a live progress readout
-- **Sale Scan** — runs a live price search for every distinct item in your bag panel, so the Relative column and the glow reflect current prices instead of your last full scan.
+- **Sale Scan** — runs a live price search for every distinct item in your bag panel, so the Relative column and the glow reflect current prices instead of your last full scan. It needs an empty sale slot.
 - **Sale Rate** — the TSM region-wide share of auctions that actually sell, as a column, a tooltip row, and an optional gate so slow sellers never glow
 - **Guide** — a short list of what the addon adds, shown once per character at login
 

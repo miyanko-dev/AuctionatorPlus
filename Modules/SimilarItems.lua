@@ -59,17 +59,21 @@ local MAX_BROWSE_ROWS = 600
 -- Merge no later than this after the browse finished, even if the item's own search never reported back
 local MERGE_FALLBACK_SECONDS = 3
 
+-- Evaluate with the item data that arrived by then, so one item the server never sends cannot hold back every row
+local ITEM_LOAD_TIMEOUT_SECONDS = 5
+
 local BROWSE_EVENTS = {
     "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED",
     "AUCTION_HOUSE_BROWSE_RESULTS_ADDED",
     "AUCTION_HOUSE_BROWSE_FAILURE",
 }
 
--- profile describes the sale item while comparables are gathered; a new sale search replaces it, which retires every callback still holding the old one
+-- profile describes the sale item while comparables are gathered; a new sale search replaces it, which retires every callback still holding the old one. browsing is true while the browse listener pages results
 local watch = {
     saleLink = nil,
     saleKind = nil,
     profile = nil,
+    browsing = false,
 }
 
 local browseFrame = CreateFrame("Frame")
@@ -278,10 +282,12 @@ local function finishBrowse(profile, results)
         end
     end
 
-    -- Stats and levels need every candidate's item data cached
+    -- Stats and levels need every candidate's item data cached; runs once, on the last load or at the timeout, where uncached candidates simply do not match
     local remaining = #candidates
+    local evaluated = false
     local function evaluate()
-        if watch.profile ~= profile then return end
+        if evaluated or watch.profile ~= profile then return end
+        evaluated = true
         local rows = {}
         for _, result in ipairs(candidates) do
             if matches(profile, result.itemKey) then
@@ -299,6 +305,7 @@ local function finishBrowse(profile, results)
         evaluate()
         return
     end
+    C_Timer.After(ITEM_LOAD_TIMEOUT_SECONDS, evaluate)
     for _, result in ipairs(candidates) do
         Item:CreateFromItemID(result.itemKey.itemID):ContinueOnItemLoad(function()
             remaining = remaining - 1
@@ -309,6 +316,7 @@ end
 
 -- ===== Browse query =====
 local function stopBrowse()
+    watch.browsing = false
     browseFrame:UnregisterAllEvents()
 end
 
@@ -328,9 +336,18 @@ browseFrame:SetScript("OnEvent", function(_, event)
     end
 end)
 
+-- Auctionator's shopping search and its incremental full scan page the client's single browse result set, which a comparables browse would replace
+local function browseBusy()
+    local scanFrame = Auctionator.State.IncrementalScanFrameRef
+    local shoppingFrame = AuctionatorShoppingFrame
+    return (scanFrame ~= nil and scanFrame.doingFullScan == true)
+        or (shoppingFrame ~= nil and shoppingFrame.searchRunning == true)
+end
+
 -- Browse the sale item's category in the background; the query joins Auctionator's throttle queue behind the item's own search
 local function startBrowse(profile)
     watch.profile = profile
+    watch.browsing = true
     local minLevel, maxLevel = levelRange(profile)
     FrameUtil.RegisterFrameForEvents(browseFrame, BROWSE_EVENTS)
     AP.Bridge.Browse({
@@ -347,11 +364,11 @@ local function cancel()
     stopBrowse()
 end
 
--- Every sell search of the slotted item restarts the comparables, so Refresh and re-drops stay in step with the listing
+-- Every sell search of the slotted item restarts the comparables, so Refresh and re-drops stay in step with the listing; none start while another browse owns the result set
 local function onSellSearch(itemLink)
     cancel()
     trackSaleItem(itemLink)
-    if not isWanted(watch.saleKind) then return end
+    if not isWanted(watch.saleKind) or browseBusy() then return end
 
     local profile = profileFor(itemLink)
     if profile then startBrowse(profile) end
@@ -366,11 +383,18 @@ local function onNativeResults(itemID)
     end
 end
 
+-- A browse still paging gives way to one Auctionator starts; finished comparables stay, since their rows no longer need the result set
+local function yieldBrowse()
+    if watch.browsing then cancel() end
+end
+
 AP.Bridge.Listen({
     Auctionator.Selling.Events.SellSearchStart,
     Auctionator.Selling.Events.ClearBagItem,
     Auctionator.AH.Events.ItemSearchResultsReady,
     Auctionator.AH.Events.CommoditySearchResultsReady,
+    Auctionator.Shopping.Tab.Events.SearchStart,
+    Auctionator.IncrementalScan.Events.ScanStart,
 }, function(_, eventName, first, second)
     if eventName == Auctionator.Selling.Events.SellSearchStart then
         onSellSearch(second)
@@ -381,6 +405,8 @@ AP.Bridge.Listen({
         onNativeResults(first.itemID)
     elseif eventName == Auctionator.AH.Events.CommoditySearchResultsReady then
         onNativeResults(first)
+    elseif eventName == Auctionator.Shopping.Tab.Events.SearchStart or eventName == Auctionator.IncrementalScan.Events.ScanStart then
+        yieldBrowse()
     end
 end)
 
@@ -417,6 +443,9 @@ function AP.SimilarItems.Ensure()
     end)
     check:SetScript("OnEnter", showTooltip)
     check:SetScript("OnLeave", GameTooltip_Hide)
+
+    -- Leaving the tab ends a browse no one would see and frees the result set for the other tabs
+    sellingFrame:HookScript("OnHide", cancel)
 
     similarCheck = check
     showCheckbox()

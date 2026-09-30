@@ -1,6 +1,6 @@
 local _, AP = ...
 
--- "Sale Scan": one live price search per distinct bag item, sequentially through Auctionator's throttle queue, recording each cheapest listing in Auctionator's price database so the Relative Value and the bag glow reflect current prices
+-- "Sale Scan": one live price search per distinct bag item, sequentially through Auctionator's throttle queue, recording each cheapest buyout in Auctionator's price database so the Relative Value and the bag glow reflect current prices
 AP.SaleScan = {}
 
 local BUTTON_LABEL = "Sale Scan"
@@ -18,6 +18,12 @@ local state = {
     expected = nil,
     timeout = nil,
 }
+
+-- Auctionator runs one item search at a time, so a scan would cancel the slotted item's own price search
+local function hasSaleItem()
+    local saleItem = AuctionatorSellingFrame and AuctionatorSellingFrame.SaleItemFrame
+    return saleItem ~= nil and saleItem.itemInfo ~= nil
+end
 
 local function setLabel(text)
     if scanButton then scanButton:SetText(text) end
@@ -64,11 +70,23 @@ nextQuery = function()
     runQuery(item)
 end
 
+-- Cheapest listing with a buyout; bid-only listings say nothing about the price an item sells for at once
+local function cheapestBuyout(itemKey)
+    local best
+    for index = 1, C_AuctionHouse.GetNumItemSearchResults(itemKey) do
+        local result = C_AuctionHouse.GetItemSearchResultInfo(itemKey, index)
+        local buyout = result and result.buyoutAmount
+        if buyout and buyout > 0 and (not best or buyout < best.buyoutAmount) then
+            best = result
+        end
+    end
+    return best
+end
+
 local function recordItemResult(itemKey)
-    if C_AuctionHouse.GetNumItemSearchResults(itemKey) == 0 then return end
-    local result = C_AuctionHouse.GetItemSearchResultInfo(itemKey, 1)
+    local result = cheapestBuyout(itemKey)
     if result then
-        AP.Bridge.RecordPrice(result.itemKey, result.buyoutAmount or result.bidAmount)
+        AP.Bridge.RecordPrice(result.itemKey, result.buyoutAmount)
     end
 end
 
@@ -123,13 +141,19 @@ local function bagItems()
 end
 
 local function start()
-    if state.queue then return end
+    if state.queue or hasSaleItem() then return end
     local items = bagItems()
     if #items == 0 then return end
 
     state.queue = items
     state.total = #items
     nextQuery()
+end
+
+local function addSlottedWarning(tooltip)
+    if hasSaleItem() and not state.queue then
+        GameTooltip_AddErrorLine(tooltip, "Clear the item in the sale slot first.", true)
+    end
 end
 
 -- Left of the selling tab's Full Scan button
@@ -140,7 +164,8 @@ function AP.SaleScan.Ensure()
     if not sellingFrame or not fullScanButton then return false end
 
     local button = AP.Panel.CreateTabButton("AuctionatorPlusSaleScanButton", sellingFrame, BUTTON_LABEL, BUTTON_LABEL,
-        "Runs one live price search for every item in the bag panel, so the Relative Value and the item glows use current auction prices. Click again to cancel. Steps aside as soon as you select an item to sell.")
+        "Runs one live price search for every item in the bag panel, so the Relative Value and the item glows use current auction prices. Click again to cancel. Needs an empty sale slot, and steps aside as soon as you select an item to sell.",
+        addSlottedWarning)
     button:SetPoint("RIGHT", fullScanButton, "LEFT", -BUTTON_GAP, 0)
     button:SetScript("OnClick", function()
         if state.queue then stop() else start() end
