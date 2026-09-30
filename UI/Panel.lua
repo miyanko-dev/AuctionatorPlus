@@ -1,40 +1,23 @@
 local _, ns = ...
 
--- Shared dialog for this author's addons: each client's own dialog border, header banner and close button, with Blizzard font objects for all text
+-- Shared native UI pieces: GameMenuFrame-style dialogs with Blizzard font objects for all text, and the fixed-size buttons this addon adds to Auctionator's tabs
 local Panel = {}
 ns.Panel = Panel
 
--- Content insets; the first element clears the header banner, whose art ends about 28px below the top edge on both clients
-Panel.INSET = 24
+-- Content starts below the header banner, whose art ends about 28px below the top edge; side and bottom padding match
+Panel.INSET = 20
 Panel.PAD_TOP = 40
 Panel.SECTION = 16
 Panel.GAP = 8
 Panel.ROW = 24
 Panel.BUTTON_HEIGHT = 22
 
--- Era's dialogs carry the UI-DialogBox backdrop of its GameMenuFrame on the frame itself, as GuildInfoFrame does, so the frame's own text draws above it
-local function classicFrame(name, parent)
-    local panel = CreateFrame("Frame", name, parent, "BackdropTemplate")
-    panel:SetBackdrop(BACKDROP_DIALOG_32_32)
-    return panel
-end
+-- Width of the tab buttons, fixed so a changing progress label never shifts the buttons anchored beside them
+local TAB_BUTTON_WIDTH = 110
 
--- Forever's dialogs use the DiamondMetal border of its GameMenuFrame, which shares the frame's level so the frame's own text draws above its background
-local function modernFrame(name, parent)
-    local panel = CreateFrame("Frame", name, parent)
-    local border = CreateFrame("Frame", nil, panel, "DialogBorderTemplate")
-    border:SetAllPoints(panel)
-    return panel
-end
-
--- ClassicDialogHeaderTemplate loads only for the classic family, so its presence picks Era's art; close offsets follow Blizzard's own dialogs on each client
-local SKIN = C_XMLUtil.GetTemplateInfo("ClassicDialogHeaderTemplate")
-    and { create = classicFrame, header = "ClassicDialogHeaderTemplate", closeX = -3, closeY = -3 }
-    or { create = modernFrame, header = "DialogHeaderTemplate", closeX = -2, closeY = -2 }
-
--- Movable dialog on the DIALOG strata that closes on Escape; starts hidden
+-- Movable dialog on the DIALOG strata that closes on Escape; starts hidden. The DiamondMetal border shares the frame's level, so the frame's own text draws above its background
 function Panel.Create(name, title, width, parent)
-    local panel = SKIN.create(name, parent or UIParent)
+    local panel = CreateFrame("Frame", name, parent or UIParent)
     panel:SetSize(width, Panel.PAD_TOP)
     panel:SetPoint("CENTER")
     panel:SetFrameStrata("DIALOG")
@@ -47,12 +30,15 @@ function Panel.Create(name, title, width, parent)
     panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
     tinsert(UISpecialFrames, name)
 
+    panel.Border = CreateFrame("Frame", nil, panel, "DialogBorderTemplate")
+    panel.Border:SetAllPoints(panel)
+
     -- Setup sizes the banner to the title in the header's default GameFontNormal
-    local header = CreateFrame("Frame", nil, panel, SKIN.header)
-    header:Setup(title)
+    panel.Header = CreateFrame("Frame", nil, panel, "DialogHeaderTemplate")
+    panel.Header:Setup(title)
 
     local close = CreateFrame("Button", nil, panel, "UIPanelCloseButton")
-    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", SKIN.closeX, SKIN.closeY)
+    close:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -2, -2)
 
     panel.contentHeight = 0
     panel:Hide()
@@ -102,4 +88,20 @@ end
 -- Height from the header clearance to the last element plus the bottom inset
 function Panel.Fit(panel)
     panel:SetHeight(Panel.PAD_TOP + panel.contentHeight + Panel.INSET)
+end
+
+-- Button for one of Auctionator's tabs in the height of Auctionator's own buttons, with a titled tooltip above it; addTooltipLines, when given, appends lines that depend on the moment
+function Panel.CreateTabButton(name, parent, label, title, body, addTooltipLines)
+    local button = CreateFrame("Button", name, parent, "UIPanelButtonTemplate")
+    button:SetSize(TAB_BUTTON_WIDTH, Panel.BUTTON_HEIGHT)
+    button:SetText(label)
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip_SetTitle(GameTooltip, title)
+        GameTooltip_AddHighlightLine(GameTooltip, body, true)
+        if addTooltipLines then addTooltipLines(GameTooltip) end
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", GameTooltip_Hide)
+    return button
 end

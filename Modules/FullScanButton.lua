@@ -1,11 +1,9 @@
 local _, AP = ...
 
--- Full Scan buttons on the shopping and selling tabs with a live progress label; each client's half places them in its own Auctionator layout as AP.shoppingScanButton and AP.sellingScanButton
+-- Full Scan buttons with a live progress label, on the shopping tab's Export Results row and under the selling tab's prices inset, as AP.shoppingScanButton and AP.sellingScanButton
 AP.FullScanButton = {}
 
 local BUTTON_LABEL = "Full Scan"
-local BUTTON_WIDTH = 110
-local BUTTON_HEIGHT = 22
 local FINAL_HOLD_SECONDS = 2
 local FADE_DURATION = 0.3
 
@@ -78,7 +76,6 @@ local function showFinal(pct, color)
     end)
 end
 
--- Both Auctionator builds fire the same four scan events, under different names
 local scanEvents = Auctionator.FullScan.Events
 
 AP.Bridge.Listen({
@@ -105,18 +102,45 @@ AP.Bridge.Listen({
     end
 end)
 
--- One Full Scan button in Auctionator's own button metrics; the caller anchors it
-function AP.FullScanButton.Create(name, parent)
-    local button = CreateFrame("Button", name, parent, "UIPanelButtonTemplate")
-    button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+-- One Full Scan button, painted with the running scan's label; the caller anchors it
+local function createButton(name, parent)
+    local button = AP.Panel.CreateTabButton(name, parent, BUTTON_LABEL, "Auctionator Full Scan",
+        "Runs the Auctionator full auction-house scan. Available once every 15 minutes.")
     paintButton(button, lastText)
     button:SetScript("OnClick", AP.Bridge.StartFullScan)
-    button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip_SetTitle(GameTooltip, "Auctionator Full Scan")
-        GameTooltip_AddHighlightLine(GameTooltip, "Runs the Auctionator full auction-house scan. Available once every 15 minutes.", true)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", GameTooltip_Hide)
     return button
+end
+
+-- Bottom-left of the results inset, on the Export Results row. Parented to that button so it hides with it whenever a buy screen covers the results
+local function ensureShoppingButton()
+    if AP.shoppingScanButton then return true end
+    local shoppingFrame = AuctionatorShoppingFrame
+    local inset = shoppingFrame and shoppingFrame.ShoppingResultsInset
+    local exportButton = shoppingFrame and shoppingFrame.ExportCSV
+    if not inset or not exportButton then return false end
+
+    local button = createButton("AuctionatorPlusFullScanShoppingButton", exportButton)
+    button:SetPoint("LEFT", inset, "LEFT", 0, 0)
+    button:SetPoint("BOTTOM", exportButton, "BOTTOM", 0, 0)
+    AP.shoppingScanButton = button
+    return true
+end
+
+-- Bottom-right of the selling tab, under the prices inset on the row the price mini-tabs use
+local function ensureSellingButton()
+    if AP.sellingScanButton then return true end
+    local sellingFrame = AuctionatorSellingFrame
+    local inset = sellingFrame and sellingFrame.HistoricalPriceInset
+    if not inset then return false end
+
+    local button = createButton("AuctionatorPlusFullScanSellingButton", sellingFrame)
+    button:SetPoint("TOPRIGHT", inset, "BOTTOMRIGHT", 0, -2)
+    AP.sellingScanButton = button
+    return true
+end
+
+function AP.FullScanButton.Ensure()
+    local shoppingReady = ensureShoppingButton()
+    local sellingReady = ensureSellingButton()
+    return shoppingReady and sellingReady
 end

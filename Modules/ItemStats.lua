@@ -1,6 +1,6 @@
 local _, AP = ...
 
--- Stat parsing for both clients; each client's half supplies AP.ItemStats.Text (the item's lowercased tooltip text) and AP.ItemStats.RATED_GEAR
+-- Stat parsing from the client's own tooltip data and stat strings
 AP.ItemStats = {}
 
 -- Primary stats with Blizzard-localized labels; tokens match against the lowercased tooltip text
@@ -17,18 +17,47 @@ for key, label in pairs(AP.ItemStats.STAT_LABELS) do
     STAT_TOKENS[key] = label:lower()
 end
 
+-- The item id of an auction item key, else the link or item string as given
+local function itemOf(itemRef)
+    if type(itemRef) == "table" then return itemRef.itemID end
+    return itemRef
+end
+
 -- GetItemInfoInstant for a link, an item string or an auction item key; nil for anything else
 function AP.ItemStats.InstantInfo(itemRef)
-    local item = type(itemRef) == "table" and itemRef.itemID or itemRef
+    local item = itemOf(itemRef)
     if not item then return nil end
     return C_Item.GetItemInfoInstant(item)
+end
+
+-- Flatten tooltip data into lowercased text, left then right text per line; nil while the item is uncached
+local function textOf(data)
+    if type(data) ~= "table" or type(data.lines) ~= "table" then return nil end
+    local parts = {}
+    for _, line in ipairs(data.lines) do
+        if type(line.leftText) == "string" and line.leftText ~= "" then parts[#parts + 1] = line.leftText end
+        if type(line.rightText) == "string" and line.rightText ~= "" then parts[#parts + 1] = line.rightText end
+    end
+    if #parts == 0 then return nil end
+    return table.concat(parts, "\n"):lower()
+end
+
+-- Tooltip text for an item link or an auction item key. Vanilla random suffixes carry fixed stats per suffix id, so a key renders the exact stats without a full link
+function AP.ItemStats.Text(itemRef)
+    local ok, data
+    if type(itemRef) == "table" and itemRef.itemID then
+        ok, data = pcall(C_TooltipInfo.GetItemKey, itemRef.itemID, itemRef.itemLevel or 0, itemRef.itemSuffix or 0)
+    elseif type(itemRef) == "string" and itemRef ~= "" then
+        ok, data = pcall(C_TooltipInfo.GetHyperlink, itemRef)
+    end
+    return ok and textOf(data) or nil
 end
 
 local function escapePattern(text)
     return (text:gsub("[%(%)%.%+%-%*%?%[%]%^%$]", "%%%0"))
 end
 
--- Lua pattern for a client stat string: %c is the sign and %s or %d the amount, since Era prints primary stats as "%c%d Agility" and Forever as "%c%s Agility". Specifiers are marked before escaping so the text around them stays literal
+-- Lua pattern for a client stat string: %c is the sign and %s or %d the amount ("%c%s Agility"). Specifiers are marked before escaping so the text around them stays literal
 local function modPattern(format)
     local marked = format:lower():gsub("%%c", "\1"):gsub("%%%d?%$?[sd]", "\2")
     local pattern = escapePattern(marked):gsub("\1", "[+-]"):gsub("\2", "([%%d%%.,]+)")
@@ -249,7 +278,7 @@ end
 
 -- Turn a Blizzard format string into a lowercased Lua pattern, so bag and weapon tooltips parse in any locale
 local function patternFrom(template, numberCapture)
-    local pattern = template:lower():gsub("[%(%)%.%+%-%*%?%[%]%^%$]", "%%%0")
+    local pattern = escapePattern(template:lower())
     pattern = pattern:gsub("%%%d?%$?d", numberCapture and "(%%d+)" or "%%d+")
     return (pattern:gsub("%%%d?%$?s", numberCapture and ".-" or "([%%d%%.,]+)"))
 end
@@ -278,6 +307,5 @@ end
 
 -- Required character level for a link, an item string or an item key; nil while the item is uncached
 function AP.ItemStats.RequiredLevel(itemRef)
-    local item = type(itemRef) == "table" and itemRef.itemID or itemRef
-    return select(5, C_Item.GetItemInfo(item))
+    return select(5, C_Item.GetItemInfo(itemOf(itemRef)))
 end

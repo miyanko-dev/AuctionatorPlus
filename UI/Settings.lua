@@ -45,12 +45,6 @@ end
 
 function AP.SettingsPanel.Register()
     local db = AP.DB()
-
-    -- The login toggle used to be the TSM hint; carry the saved choice over from older builds
-    if db.tsmHint ~= nil then
-        db.guideAtLogin, db.tsmHint = db.tsmHint, nil
-    end
-
     local layout
     category, layout = Settings.RegisterVerticalLayoutCategory("Auctionator Plus")
 

@@ -1,7 +1,7 @@
 local _, AP = ...
 
 -- TSM market data through TSM's public API, so the payload format, realm and region keying and the AppHelper import stay TSM's problem
--- Semantics as the installed TSM v4.14.77 defines them: DBMarket is the realm market value in copper, DBRegionSaleRate the region sale share as a 0-1 fraction. That build loads on Classic Era; its toc lacks 16001, so on WoW Forever TSM_API stays nil and every TSM row stays hidden
+-- Semantics as the installed TSM v4.14.77 defines them: DBMarket is the realm market value in copper, DBRegionSaleRate the region sale share as a 0-1 fraction. That build has no 16001 toc, so TSM_API stays nil and every TSM row stays hidden until TSM ships for WoW Forever
 AP.TSM = {}
 
 local MARKET_SOURCE = "DBMarket"

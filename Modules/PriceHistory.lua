@@ -1,8 +1,7 @@
 local _, AP = ...
 
--- Price-history statistics, the Relative Value and the tooltip rows; each client's half hooks its tooltips and defines AP.Tooltip.TrendMode
+-- Price-history statistics, the Relative Value and the item tooltip rows
 AP.Trend = {}
-AP.Tooltip = {}
 
 -- ===== Price-history statistics =====
 -- 14 days keeps the local average comparable to TSM's market value window
@@ -90,7 +89,7 @@ end
 function AP.Trend.Colorize(pct, mode)
     if type(pct) ~= "number" then return nil end
 
-    if pct == 0 then return WHITE_FONT_COLOR:WrapTextInColorCode("0%") end
+    if pct == 0 then return HIGHLIGHT_FONT_COLOR:WrapTextInColorCode("0%") end
     local increaseGood = mode == AP.Trend.UP_GREEN
     local color = ((pct > 0) == increaseGood) and GREEN_FONT_COLOR or RED_FONT_COLOR
     return color:WrapTextInColorCode(string.format("%+d%%", pct))
@@ -99,7 +98,7 @@ end
 -- ===== Item tooltip rows =====
 local function addRow(tooltip, label, text)
     if text then
-        tooltip:AddDoubleLine(label, text, 1, 1, 1, 1, 1, 1)
+        GameTooltip_AddColoredDoubleLine(tooltip, label, text, HIGHLIGHT_FONT_COLOR, HIGHLIGHT_FONT_COLOR, false)
     end
 end
 
@@ -109,15 +108,29 @@ local function ageLabel(days)
     return ("Average Price (Auctionator %s)"):format(days < 1 and "<1d" or (days .. "d"))
 end
 
+local function shown(frame)
+    return frame ~= nil and frame:IsVisible()
+end
+
+-- Seller's colours in the selling views, buyer's colours anywhere else in an open Auction House
+local function trendMode()
+    local ah = AuctionHouseFrame
+    if not shown(ah) then return AP.Trend.UP_GREEN end
+    if shown(AuctionatorSellingFrame) or shown(ah.ItemSellFrame) or shown(ah.CommoditiesSellFrame) then
+        return AP.Trend.UP_GREEN
+    end
+    return AP.Trend.UP_RED
+end
+
 -- Averages first, then the Relative Value of the last known price against each, then the sale rate; rows without data stay silent and Auctionator's own lines are left untouched
-function AP.Tooltip.AddPriceRows(tooltip, itemLink)
+local function addPriceRows(tooltip, itemLink)
     local average = AP.Trend.AverageFor(itemLink)
     local tsmMarket = AP.TSM.MarketValueFor(itemLink)
     if not (average or tsmMarket) then return end
 
     local auction = AP.Bridge.AuctionPrice(itemLink)
-    local mode = AP.Tooltip.TrendMode()
-    tooltip:AddLine(" ")
+    local mode = trendMode()
+    GameTooltip_AddBlankLineToTooltip(tooltip)
     addRow(tooltip, ageLabel(AP.Bridge.PriceAge(itemLink)), average and AP.Bridge.Money(average))
     addRow(tooltip, "Average Price (TSM)", tsmMarket and AP.Bridge.Money(tsmMarket))
     addRow(tooltip, "Relative Value (Auctionator)", AP.Trend.Colorize(AP.Trend.Percent(auction, average), mode))
@@ -127,3 +140,12 @@ function AP.Tooltip.AddPriceRows(tooltip, itemLink)
     -- Resize so the added lines render inside the tooltip frame
     tooltip:Show()
 end
+
+-- Only the two player-facing tooltips get rows
+local PLAYER_TOOLTIPS = { [GameTooltip] = true, [ItemRefTooltip] = true }
+
+TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tooltip)
+    if not PLAYER_TOOLTIPS[tooltip] then return end
+    local _, itemLink = TooltipUtil.GetDisplayedItem(tooltip)
+    if itemLink then pcall(addPriceRows, tooltip, itemLink) end
+end)

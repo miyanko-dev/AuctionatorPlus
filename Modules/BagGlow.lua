@@ -38,8 +38,8 @@ local function apply(button, itemLink)
     end
 end
 
--- Re-evaluate every bag button in place, for callers that changed prices or settings without touching the bags
-function AP.BagGlow.Repaint()
+-- Every item button of the selling tab's bag panel, with its item info; nothing before the AH first opened
+function AP.BagGlow.EachButton(fn)
     local listing = AuctionatorSellingFrame and AuctionatorSellingFrame.BagListing
     local view = listing and listing.View
     if not view or type(view.itemMap) ~= "table" then return end
@@ -47,10 +47,17 @@ function AP.BagGlow.Repaint()
     for _, group in pairs(view.itemMap) do
         for _, button in pairs(group) do
             if type(button) == "table" and button.itemInfo then
-                apply(button, button.itemInfo.itemLink)
+                fn(button, button.itemInfo)
             end
         end
     end
+end
+
+-- Re-evaluate every bag button in place, for callers that changed prices or settings without touching the bags
+function AP.BagGlow.Repaint()
+    AP.BagGlow.EachButton(function(button, info)
+        apply(button, info.itemLink)
+    end)
 end
 
 -- Post-hook the mixin before any buttons exist; SetItemInfo runs on every refresh, so recycled buttons drop the glow on their own when an item stops being favorable

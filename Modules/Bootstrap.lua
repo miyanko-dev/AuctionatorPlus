@@ -1,6 +1,6 @@
 local _, AP = ...
 
--- Each returns true once its UI piece exists, the first three from the loaded client's half; order matters where one button anchors to another
+-- Each returns true once its UI piece exists; order matters where one button anchors to another
 local ENSURES = {
     AP.FullScanButton.Ensure,
     AP.SimilarItems.Ensure,

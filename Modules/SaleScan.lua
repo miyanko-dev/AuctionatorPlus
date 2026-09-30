@@ -1,11 +1,9 @@
 local _, AP = ...
 
--- "Sale Scan" on Forever: one live price search per distinct bag item, sequentially through Auctionator's throttle queue, recording each cheapest listing in Auctionator's price database so the Relative Value and the bag glow reflect current prices
+-- "Sale Scan": one live price search per distinct bag item, sequentially through Auctionator's throttle queue, recording each cheapest listing in Auctionator's price database so the Relative Value and the bag glow reflect current prices
 AP.SaleScan = {}
 
 local BUTTON_LABEL = "Sale Scan"
-local BUTTON_WIDTH = 110
-local BUTTON_HEIGHT = 22
 local BUTTON_GAP = 4
 
 -- A search the server never answers is skipped after this
@@ -114,20 +112,13 @@ AP.Bridge.Listen({
 
 -- Distinct auctionable items shown in the bag panel
 local function bagItems()
-    local listing = AuctionatorSellingFrame and AuctionatorSellingFrame.BagListing
-    local view = listing and listing.View
-    if not view or type(view.itemMap) ~= "table" then return {} end
-
     local seen, items = {}, {}
-    for _, group in pairs(view.itemMap) do
-        for _, button in pairs(group) do
-            local info = type(button) == "table" and button.itemInfo
-            if info and info.itemID and not seen[info.itemID] then
-                seen[info.itemID] = true
-                items[#items + 1] = info
-            end
+    AP.BagGlow.EachButton(function(_, info)
+        if info.itemID and not seen[info.itemID] then
+            seen[info.itemID] = true
+            items[#items + 1] = info
         end
-    end
+    end)
     return items
 end
 
@@ -148,21 +139,12 @@ function AP.SaleScan.Ensure()
     local fullScanButton = AP.sellingScanButton
     if not sellingFrame or not fullScanButton then return false end
 
-    local button = CreateFrame("Button", "AuctionatorPlusSaleScanButton", sellingFrame, "UIPanelButtonTemplate")
-    button:SetSize(BUTTON_WIDTH, BUTTON_HEIGHT)
+    local button = AP.Panel.CreateTabButton("AuctionatorPlusSaleScanButton", sellingFrame, BUTTON_LABEL, BUTTON_LABEL,
+        "Runs one live price search for every item in the bag panel, so the Relative Value and the item glows use current auction prices. Click again to cancel. Steps aside as soon as you select an item to sell.")
     button:SetPoint("RIGHT", fullScanButton, "LEFT", -BUTTON_GAP, 0)
-    button:SetText(BUTTON_LABEL)
-
     button:SetScript("OnClick", function()
         if state.queue then stop() else start() end
     end)
-    button:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip_SetTitle(GameTooltip, BUTTON_LABEL)
-        GameTooltip_AddHighlightLine(GameTooltip, "Runs one live price search for every item in the bag panel, so the Relative Value and the item glows use current auction prices. Click again to cancel. Steps aside as soon as you select an item to sell.", true)
-        GameTooltip:Show()
-    end)
-    button:SetScript("OnLeave", GameTooltip_Hide)
 
     sellingFrame:HookScript("OnHide", stop)
 

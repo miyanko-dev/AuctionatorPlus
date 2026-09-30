@@ -10,9 +10,6 @@ local STAT_ORDER = {
     "arcanedamage", "firedamage", "frostdamage", "holydamage", "naturedamage", "shadowdamage",
 }
 
--- Stats only gear with combat ratings carries in a parseable form; both clients define their strings, so the client's half decides through AP.ItemStats.RATED_GEAR
-local RATED_STATS = { haste = true, expertise = true, armorpenetration = true, spellpenetration = true }
-
 -- Labels are the client's own stat names, so they match the item tooltips in every locale
 local FILTER_LABELS = {
     attackpower = ITEM_MOD_ATTACK_POWER_SHORT,
@@ -40,18 +37,15 @@ for key, label in pairs(AP.ItemStats.STAT_LABELS) do
     FILTER_LABELS[key] = label
 end
 
--- The stats this client offers, in dialog order, and the same set for lookups
-local FILTER_ORDER, OFFERED = {}, {}
+-- The dialog's stats as a set, for dropping saved keys it no longer lists
+local OFFERED = {}
 for _, key in ipairs(STAT_ORDER) do
-    if FILTER_LABELS[key] and (AP.ItemStats.RATED_GEAR or not RATED_STATS[key]) then
-        FILTER_ORDER[#FILTER_ORDER + 1] = key
-        OFFERED[key] = true
-    end
+    OFFERED[key] = true
 end
 
 local BUTTON_GAP = 5
 local FILTER_COLUMNS = 2
-local FILTER_ROWS = math.ceil(#FILTER_ORDER / FILTER_COLUMNS)
+local FILTER_ROWS = math.ceil(#STAT_ORDER / FILTER_COLUMNS)
 local COLUMN_WIDTH = 208
 local DROPDOWN_WIDTH = 120
 local APPLY_WIDTH = 96
@@ -66,7 +60,7 @@ local allEntries = {}
 -- Bumps on every search start and refilter; stale item-load callbacks compare against it and drop out
 local generation = 0
 
--- Offered stats of a saved filter; stats this client does not offer never constrain it
+-- Offered stats of a saved filter; a saved key the dialog no longer lists never constrains it
 local function offeredStats(stats)
     local kept = {}
     for key in pairs(stats) do
@@ -105,9 +99,9 @@ local function statsMatch(itemText, filter)
     return true
 end
 
--- Whether a result survives the filter: equipment must carry the chosen stats, while consumables, trade goods and rows without an item (missing-term placeholders) always stay. Second return asks for a retry once the item cache fills
+-- Whether a result survives the filter: equipment must carry the chosen stats, while consumables, trade goods and missing-term placeholders (which carry the unobtainable non-equipment item 1217) always stay. Second return asks for a retry once the item cache fills
 local function entryMatches(entry, filter)
-    local itemRef = AP.Bridge.ShoppingItemRef(entry)
+    local itemRef = entry.itemKey
     if not itemRef then return true, false end
 
     local classID = select(6, AP.ItemStats.InstantInfo(itemRef))
@@ -136,7 +130,7 @@ end
 
 -- Re-append an uncached entry once its item data arrives, if it matches by then; the provider dedups by item, so double appends are safe
 local function retryOnLoad(entry)
-    local itemID = AP.ItemStats.InstantInfo(AP.Bridge.ShoppingItemRef(entry))
+    local itemID = AP.ItemStats.InstantInfo(entry.itemKey)
     if not itemID then return end
 
     local startedGeneration = generation
@@ -178,7 +172,7 @@ end
 
 local function readControls()
     local stats = {}
-    for _, key in ipairs(FILTER_ORDER) do
+    for _, key in ipairs(STAT_ORDER) do
         if dialog.statChecks[key]:GetChecked() then
             stats[key] = true
         end
@@ -189,7 +183,7 @@ local function readControls()
 end
 
 local function applyToControls(filter)
-    for _, key in ipairs(FILTER_ORDER) do
+    for _, key in ipairs(STAT_ORDER) do
         dialog.statChecks[key]:SetChecked(filter and filter.stats[key])
     end
     dialog.statLogic = filter and filter.logic or "AND"
@@ -215,7 +209,7 @@ local function buildDialog()
     dialog.logicDropdown = logicDropdown
 
     dialog.statChecks = {}
-    for index, key in ipairs(FILTER_ORDER) do
+    for index, key in ipairs(STAT_ORDER) do
         local check = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
         check:SetSize(panel.ROW, panel.ROW)
         local column = math.floor((index - 1) / FILTER_ROWS)
