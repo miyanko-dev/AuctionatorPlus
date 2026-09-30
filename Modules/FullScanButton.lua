@@ -106,14 +106,14 @@ AP.Bridge.Listen(scanEvents, function(_, eventName, eventData)
     end
 end)
 
--- The incremental scan and a shopping search would page the client's one browse result set at once; Auctionator's own button never meets a running search, since leaving the Shopping tab stops it
-local function shoppingSearchRunning()
+-- The incremental scan and a shopping search would page the client's one browse result set at once; the replicate scan reads its own list, so it never waits. Auctionator's own button never meets a running search, since leaving the Shopping tab stops it
+local function blockedBySearch()
     local shoppingFrame = AuctionatorShoppingFrame
-    return shoppingFrame ~= nil and shoppingFrame.searchRunning == true
+    return not AP.Bridge.IsReplicateScan() and shoppingFrame ~= nil and shoppingFrame.searchRunning == true
 end
 
 local function start()
-    if shoppingSearchRunning() then return end
+    if blockedBySearch() then return end
     AP.Bridge.StartFullScan()
 end
 
@@ -122,7 +122,7 @@ local function addStateLines(tooltip)
     if AP.Bridge.IsReplicateScan() then
         GameTooltip_AddNormalLine(tooltip, "Alternate Scan Mode is on: one scan every 15 minutes.", true)
     end
-    if shoppingSearchRunning() then
+    if blockedBySearch() then
         GameTooltip_AddErrorLine(tooltip, "Wait for the shopping search to finish first.", true)
     end
 end
@@ -130,7 +130,7 @@ end
 -- One Full Scan button, painted with the running scan's label; the caller anchors it
 local function createButton(name, parent)
     local button = AP.Panel.CreateTabButton(name, parent, BUTTON_LABEL, "Auctionator Full Scan",
-        "Runs Auctionator's full auction-house scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button. Needs no shopping search running.",
+        "Runs Auctionator's full auction-house scan in the scan mode set in Auctionator's options, like Auctionator's own Full Scan button. In the default scan mode it waits until no shopping search runs.",
         addStateLines)
     paintButton(button, lastText)
     button:SetScript("OnClick", start)
