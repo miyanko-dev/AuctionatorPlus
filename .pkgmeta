@@ -1,4 +1,1 @@
 package-as: AuctionatorPlus
-
-ignore:
-  - MEMORY.md
